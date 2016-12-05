@@ -42,7 +42,7 @@ static XtensaConfig esp32 __attribute__((unused)) = {
 #include "core-esp32/gdb-config.c"
         }
     },
-    .clock_freq_khz = 80000,
+    .clock_freq_khz = 240000,
     DEFAULT_SECTIONS
 };
 

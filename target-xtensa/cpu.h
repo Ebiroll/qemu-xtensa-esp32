@@ -108,9 +108,12 @@ enum {
 };
 
 enum {
-    //THREADPTR = 231,
+    THREADPTR = 231,
     FCR = 232,
     FSR = 233,
+    F64R_LO = 234,
+    F64R_HI = 235,
+    F64S = 236
 };
 
 enum {
@@ -126,7 +129,6 @@ enum {
     MR = 32,
     WINDOW_BASE = 72,
     WINDOW_START = 73,
-    THREADPTR   =  74,
     PTEVADDR = 83,
     RASID = 90,
     ITLBCFG = 91,
