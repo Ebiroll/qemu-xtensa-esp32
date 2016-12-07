@@ -547,75 +547,59 @@ typedef struct ESP32BoardDesc {
     size_t sram_size;
 } ESP32BoardDesc;
 
-typedef struct Esp32FpgaState {
+typedef struct ULP_State {
     MemoryRegion iomem;
-    uint32_t leds;
-    uint32_t switches;
-} Esp32FpgaState;
+} ULP_State;
 
-static void lx60_fpga_reset(void *opaque)
+static void ulp_reset(void *opaque)
 {
-    Esp32FpgaState *s = opaque;
-
-    s->leds = 0;
-    s->switches = 0;
+    //ULP_State *s = opaque;
+    //s->leds = 0;
+    //s->switches = 0;
 }
 
-static uint64_t lx60_fpga_read(void *opaque, hwaddr addr,
+static uint64_t ulp_read(void *opaque, hwaddr addr,
         unsigned size)
 {
-    Esp32FpgaState *s = opaque;
+    printf("ulp read %" PRIx64 " \n",addr);
 
+    //ULP_State *s = opaque;
     switch (addr) {
     case 0x0: /*build date code*/
         return 0x09272011;
-
-    case 0x4: /*processor clock frequency, Hz*/
-        return 10000000;
-
-    case 0x8: /*LEDs (off = 0, on = 1)*/
-        return s->leds;
-
-    case 0xc: /*DIP switches (off = 0, on = 1)*/
-        return s->switches;
     }
     return 0;
 }
 
-static void lx60_fpga_write(void *opaque, hwaddr addr,
+static void ulp_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
-    Esp32FpgaState *s = opaque;
+    //ULP_State *s = opaque;
+    printf("ulp write %" PRIx64 " \n",addr);
 
     switch (addr) {
     case 0x8: /*LEDs (off = 0, on = 1)*/
-        s->leds = val;
-        break;
-
-    case 0x10: /*board reset*/
-        if (val == 0xdead) {
-            qemu_system_reset_request();
-        }
+        //s->leds = val;
         break;
     }
 }
 
-static const MemoryRegionOps lx60_fpga_ops = {
-    .read = lx60_fpga_read,
-    .write = lx60_fpga_write,
+static const MemoryRegionOps ulp_ops = {
+    .read = ulp_read,
+    .write = ulp_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static Esp32FpgaState *esp32_fpga_init(MemoryRegion *address_space,
+static ULP_State *esp32_fpga_init(MemoryRegion *address_space,
         hwaddr base)
 {
-    Esp32FpgaState *s = g_malloc(sizeof(Esp32FpgaState));
+    ULP_State *s = g_malloc(sizeof(ULP_State));
 
     //memory_region_init_io(&s->iomem, NULL, &lx60_fpga_ops, s,
     //        "lx60.fpga", 0x10000);
     //memory_region_add_subregion(address_space, base, &s->iomem);
-    lx60_fpga_reset(s);
-    qemu_register_reset(lx60_fpga_reset, s);
+    ulp_reset(s);
+    qemu_register_reset(ulp_reset, s);
     return s;
 }
 
@@ -673,7 +657,7 @@ static void esp_xtensa_ccompare_cb(void *opaque)
 }
 
 
-static void lx60_reset(void *opaque)
+static void esp32_reset(void *opaque)
 {
     XtensaCPU *cpu = opaque;
 
@@ -686,11 +670,52 @@ static void lx60_reset(void *opaque)
         timer_new_ns(QEMU_CLOCK_VIRTUAL, &esp_xtensa_ccompare_cb, cpu);
 
 
-
     env->sregs[146] = 0xABAB;
 
 
 }
+
+static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+
+    printf("wifi read %" PRIx64 " \n",addr);
+    switch(addr) {
+    case 0xe04c:
+        return 0xffffffff;
+        break;
+    case 0xe0c4:
+        return 0xffffffff;
+        break;
+    case 0x607c:
+        return 0xffffffff;
+        break;
+    case 0x1c018:
+        //return 0;
+        return 0x980020b6;
+        // Some difference should land between these values
+              // 0x980020c0;
+              // 0x980020b0;
+        //return   0x800000;
+    case 0x33c00:
+        return 0x980020b6+0x980020b0;
+        //return 0;
+        //return 
+    default:
+        break;
+    }
+
+    return 0x0;
+}
+
+
+static void esp_wifi_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+
+}
+
 
 static unsigned int sim_RTC_CNTL_DIG_ISO_REG;
 
@@ -698,11 +723,13 @@ static unsigned int sim_RTC_CNTL_STORE5_REG=0;
 
 static unsigned int sim_DPORT_PRO_CACHE_CTRL_REG=0x28;
 
-
+//  0x3ff5f06c 
+// TIMG_RTCCALICFG1_REG 3ff5f06c=25
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
 {
-    if (addr!=0x04001c) printf("io read %" PRIx64 " ",addr);
+    if (addr!=0x04001c && (addr<0x69440 || addr>0x6947c)
+    ) printf("io read %" PRIx64 " \n",addr);
 
     switch (addr) {
        case 0x38:
@@ -753,9 +780,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            printf(" SPI_EXT2_REG 3ff430f8=\n");
            return 0x0;
            break;
-
            
-
         case 0x44038:
            printf("GPIO_STRAP_REG 3ff44038=0x13\n");
            // boot_sel_chip[5:0]: MTDI, GPIO0, GPIO2, GPIO4, MTDO, GPIO5
@@ -782,7 +807,6 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            printf("RTC_CNTL_TIME_UPDATE_REG 3ff4800c=%08X\n",0x40000000);
            return 0x40000000;
            break;
-
 
         case 0x58040:
            printf("SDIO or WAKEUP??\n"); 
@@ -824,63 +848,24 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
                 if (addr!=0x04001c) printf("UART READ");
             }
           }
-          if (addr!=0x04001c) printf("\n");
+          //if (addr!=0x04001c) printf("\n");
     }
 
     return 0x0;
 }
 
-
-static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
-        unsigned size)
-{
-
-    printf("wifi read %" PRIx64 " \n",addr);
-    switch(addr) {
-    case 0xe04c:
-        return 0xffffffff;
-        break;
-    case 0xe0c4:
-        return 0xffffffff;
-        break;
-    case 0x607c:
-        return 0xffffffff;
-        break;
-    case 0x1c018:
-        //return 0;
-        return 0x980020b6;
-        // Some difference should land between these values
-              // 0x980020c0;
-              // 0x980020b0;
-        //return   0x800000;
-    case 0x33c00:
-        return 0x980020b6+0x980020b0;
-        //return 0;
-        //return 
-    default:
-        break;
-    }
-
-    return 0x0;
-}
-
-
-static void esp_wifi_write(void *opaque, hwaddr addr,
-        uint64_t val, unsigned size)
-{
-    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
-
-}
 
 
 static void esp_io_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
 
-    if (addr>0x10000 && addr<0x11ffc) {
+    if ((addr>0x10000 && addr<0x11ffc) || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
+     ||  (addr>=0x69440 && addr<=0x6947c) || addr==0x44008  || addr==0x4400c
+    )  {
         // Cache MMU table
     } else {
-       if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " ",addr,val);
+       if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
     }
     switch (addr) {
 
@@ -945,7 +930,7 @@ static void esp_io_write(void *opaque, hwaddr addr,
           {
               printf("UART OUTPUT");
           }
-          printf("\n");
+          //printf("\n");
     }
 
 }
@@ -979,7 +964,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     MemoryRegion *system_memory = get_system_memory();
     XtensaCPU *cpu = NULL;
     CPUXtensaState *env = NULL;
-    MemoryRegion *ram,*ram1, *rom, *system_io;  // *rambb,
+    MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem;
     static MemoryRegion *wifi_io;
 
     DriveInfo *dinfo;
@@ -1021,7 +1006,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
         } else {
            env->sregs[PRID] = 0xABAB;            
         }
-        qemu_register_reset(lx60_reset, cpu);
+        qemu_register_reset(esp32_reset, cpu);
         /* Need MMU initialized prior to ELF loading,
          * so that ELF gets loaded into virtual addresses
          */
@@ -1048,6 +1033,13 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
 
 
+    ulp_slowmem = g_malloc(sizeof(*ulp_slowmem));
+    memory_region_init_io(ulp_slowmem, NULL, &ulp_ops, NULL, "esp32.ulpmem",
+                          0x80000);
+
+    memory_region_add_subregion(system_memory, 0x50000000, ulp_slowmem);
+
+
     // Cant really see this in documentation, maybe leftover from ESP31
     //rambb = g_malloc(sizeof(*rambb));
     //memory_region_init_ram(rambb, NULL, "rambb",  0xBFFFFF,  
@@ -1066,7 +1058,6 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
 
     // sram1 -- 0x400B_0000 ~ 0x400B_7FFF
-
 
     // dram0 3ffc0000 
 
@@ -1089,8 +1080,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     if (nd_table[0].used) {
         printf("Open net\n");
-        open_net_init(system_memory,0x3ff69000,0x3ff69400 , 0x3FFF0000,
-                xtensa_get_extint(env, 9), nd_table);
+        open_net_init(system_memory,0x3ff69000,0x3ff69400 , 0x3FFF8000,
+              env->irq_inputs[9], nd_table);   //   xtensa_get_extint(env, 9)
     } 
 
 

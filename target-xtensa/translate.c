@@ -1401,7 +1401,7 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                     break;
 
                 case 6: /*RER*/
-                    //TBD()
+                    TBD();
                     printf("HOST RER TBD\n");
                     break;
 
