@@ -1018,7 +1018,9 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     // Map all as ram 
     ram = g_malloc(sizeof(*ram));
-    memory_region_init_ram(ram, NULL, "iram0", 0x1fffffff,  // 00000
+    // memory_region_init_ram(ram, NULL, "iram0", 0x1fffffff,  // 00000
+    //                       &error_abort);
+     memory_region_init_ram(ram, NULL, "iram0", 0x20000000,  // 00000
                            &error_abort);
 
     vmstate_register_ram_global(ram);
@@ -1091,7 +1093,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //}
 
     //esp32_serial_init(system_io, 0x40000, "esp32.uart0",
-    //                    xtensa_get_extint(env, 5), serial_hds[0]);
+   //                     xtensa_get_extint(env, 5), serial_hds[0]);
 
     //printf("No call to serial__mm_init\n");
 
