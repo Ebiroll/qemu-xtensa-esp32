@@ -706,12 +706,13 @@ static unsigned int sim_DPORT_APPCPU_CTRL_D_REG=0;
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
 {
-    if (addr!=0x04001c) printf("io read %" PRIx64 " ",addr);
+    if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
     switch (addr) {
 
        case 0x38:
-           printf(" DPORT_APPCPU_CTRL_D_REG  3ff00038");
+           // PRO cpu is busy reading this
+           //printf(" DPORT_APPCPU_CTRL_D_REG  3ff00038");
            //return 0x28;
            return sim_DPORT_APPCPU_CTRL_D_REG;
            break;
@@ -1183,8 +1184,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //    serial_hds[0] = qemu_chr_new("serial0", "null",NULL);
     //}
 
-    //esp32_serial_init(system_io, 0x40000, "esp32.uart0",
-   //                     xtensa_get_extint(env, 5), serial_hds[0]);
+    esp32_serial_init(system_io, 0x40000, "esp32.uart0",
+                        xtensa_get_extint(env, 5), serial_hds[0]);
 
     //printf("No call to serial__mm_init\n");
 
