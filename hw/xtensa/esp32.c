@@ -1098,12 +1098,18 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
         }
         env = &cpu->env;
 
-        if (n==0) {
-           env->sregs[PRID] = 0xCDCD;
+        if (smp_cpus==2) {
+            if (n==1) {
+                env->sregs[PRID] = 0xCDCD;
+            } else {
+                env->sregs[PRID] = 0xABAB;
+                APPcpu = cpu;            
+            }
         } else {
-           env->sregs[PRID] = 0xABAB;
-           APPcpu = cpu;            
+                // If only running one core, it should be PRO-CPU 
+                env->sregs[PRID] = 0xCDCD;
         }
+
         qemu_register_reset(lx60_reset, cpu);
         /* Need MMU initialized prior to ELF loading,
          * so that ELF gets loaded into virtual addresses
