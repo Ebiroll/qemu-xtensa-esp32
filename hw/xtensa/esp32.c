@@ -913,12 +913,12 @@ static void esp_io_write(void *opaque, hwaddr addr,
              if (f_rom == NULL) {
                    fprintf(stderr,"   Can't open 'rom.bin' for reading.\n");
 	        } else {
-                unsigned int *rom_data=(unsigned int *)malloc(0x63000*sizeof(unsigned int));
+                 unsigned int *rom_data=(unsigned int *)malloc(0x63000*sizeof(unsigned int));
                                                               //62ccc last patch adress
-                if (fread(rom_data,0x63000*sizeof(unsigned char),1,f_rom)<1) {
+                 if (fread(rom_data,0x63000*sizeof(unsigned char),1,f_rom)<1) {
                     fprintf(stderr," File 'rom.bin' is truncated or corrupt.\n");                
-                }
-                cpu_physical_memory_write(0x40000000, rom_data, 0x63000*sizeof(unsigned int));
+                 }
+                 cpu_physical_memory_write(0x40000000, rom_data, 0x63000*sizeof(unsigned char));
                 fprintf(stderr,"Rom is restored.\n");
             }
            }
@@ -1375,19 +1375,21 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
                 if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
                    printf(" File 'rom.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned int));
+                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned char));
+                fclose(f_rom);
             }
 
             FILE *f_rom1=fopen("rom1.bin", "r");
             
-            if (f_rom == NULL) {
+            if (f_rom1 == NULL) {
                printf("   Can't open 'rom1.bin' for reading.\n");
 	        } else {
                 unsigned int *rom1_data=(unsigned int *)malloc(0x10000*sizeof(unsigned int));
                 if (fread(rom1_data,0x10000*sizeof(unsigned char),1,f_rom1)<1) {
                    printf(" File 'rom1.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned int));
+                cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
+                fclose(f_rom1);
             }
 
 
