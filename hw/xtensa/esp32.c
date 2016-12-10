@@ -698,6 +698,10 @@ static unsigned int sim_RTC_CNTL_STORE5_REG=0;
 
 static unsigned int sim_DPORT_PRO_CACHE_CTRL_REG=0x28;
 
+static unsigned int sim_DPORT_APP_CACHE_CTRL_REG=0x28;
+
+static unsigned int sim_DPORT_APPCPU_CTRL_D_REG=0;
+
 
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
@@ -705,10 +709,16 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
     if (addr!=0x04001c) printf("io read %" PRIx64 " ",addr);
 
     switch (addr) {
+
        case 0x38:
-           printf(" DPORT_PRO_CACHE_CTRL_REG  3ff00038=%08X\n",28);
-           return 0x28;
+           printf(" DPORT_APPCPU_CTRL_D_REG  3ff00038");
+           //return 0x28;
+           return sim_DPORT_APPCPU_CTRL_D_REG;
            break;
+
+           //case 0x38:
+           //printf("DPORT_APPCPU_CTRL_D_REG 3ff00038\n");
+           // break;
 
        case 0x40:
            printf(" DPORT_PRO_CACHE_CTRL_REG  3ff00040=%08X\n",sim_DPORT_PRO_CACHE_CTRL_REG);
@@ -721,8 +731,9 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            break;
 
        case 0x58:
-           printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058=0x01\n");
-           return 0x01;
+           printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058=%08X\n",sim_DPORT_APP_CACHE_CTRL_REG);
+           // OLAS was 1
+           return sim_DPORT_APP_CACHE_CTRL_REG;
            break;
 
       case 0x3F0:
@@ -730,6 +741,11 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x80;
            break;
 
+           //while (GET_PERI_REG_BITS2(DPORT_APP_DCACHE_DBUG0_REG, DPORT_APP_CACHE_S
+      case 0x418:
+           printf(" DPORT_APP_DCACHE_DBUG0_REG  3ff00418=0x80\n");
+           return 0x80;
+           break;
 
         case 0x42000:
            printf(" SPI_CMD_REG 3ff42000=0\n");
@@ -830,48 +846,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
     return 0x0;
 }
 
-
-static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
-        unsigned size)
-{
-
-    printf("wifi read %" PRIx64 " \n",addr);
-    switch(addr) {
-    case 0xe04c:
-        return 0xffffffff;
-        break;
-    case 0xe0c4:
-        return 0xffffffff;
-        break;
-    case 0x607c:
-        return 0xffffffff;
-        break;
-    case 0x1c018:
-        //return 0;
-        return 0x980020b6;
-        // Some difference should land between these values
-              // 0x980020c0;
-              // 0x980020b0;
-        //return   0x800000;
-    case 0x33c00:
-        return 0x980020b6+0x980020b0;
-        //return 0;
-        //return 
-    default:
-        break;
-    }
-
-    return 0x0;
-}
-
-
-static void esp_wifi_write(void *opaque, hwaddr addr,
-        uint64_t val, unsigned size)
-{
-    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
-
-}
-
+XtensaCPU *APPcpu = NULL;
 
 static void esp_io_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
@@ -884,10 +859,71 @@ static void esp_io_write(void *opaque, hwaddr addr,
     }
     switch (addr) {
 
+        case 0x2c:
+            //SET_PERI_REG_MASK(DPORT_APPCPU_CTRL_A_REG, DPORT_APPCPU_RESETTING); 
+            if (val==1) {
+                printf("DPORT_APPCPU_CTRL_A_REG 0x3ff0002c\n");
+                if (APPcpu) {
+                    printf("RESET 0x3ff0002c\n");
+                    //CPUClass *cc = CPU_CLASS(APPcpu);
+                    //XtensaCPUClass *xcc = XTENSA_CPU_GET_CLASS(APPcpu);
+                    CPUXtensaState *env = &APPcpu->env;
+                    //qemu_register_reset(lx60_reset, APPcpu);
+                    //cc->reset(env);
+                    env->exception_taken = 0;
+                    env->pc = env->config->exception_vector[EXC_RESET];
+                    env->sregs[LITBASE] &= ~1;
+                    env->sregs[PS] = xtensa_option_enabled(env->config,
+                                                           XTENSA_OPTION_INTERRUPT) ? 0x1f : 0x10;
+                    env->sregs[VECBASE] = env->config->vecbase;
+                    env->sregs[IBREAKENABLE] = 0;
+                    env->sregs[MEMCTL] = MEMCTL_IL0EN & env->config->memctl_mask;
+                    env->sregs[CACHEATTR] = 0x22222222;
+                    env->sregs[ATOMCTL] = xtensa_option_enabled(env->config,
+                                                                XTENSA_OPTION_ATOMCTL) ? 0x28 : 0x15;
+                    env->sregs[CONFIGID0] = env->config->configid[0];
+                    env->sregs[CONFIGID1] = env->config->configid[1];
+
+                    env->pending_irq_level = 0;
+                    //reset_mmu(env);
+                }
+            }
+            break; 
+
+        case 0x38:
+            printf("DPORT_APPCPU_CTRL_D_REG 3ff00038\n");
+            sim_DPORT_APPCPU_CTRL_D_REG=val;
+            break;
+
         case 0x40:
             printf("DPORT_PRO_CACHE_CTRL_REG 3ff00040\n");
             sim_DPORT_PRO_CACHE_CTRL_REG=val;
            break; 
+        case 0x58:
+           printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058\n");
+           sim_DPORT_APP_CACHE_CTRL_REG=val;
+           break;
+
+        case 0x88:
+            // TODO!! CHECK IF UNUSED, Just unpatches the rom patches
+           printf(" OLAS_EMULATION_ROM_UNPATCH  3ff00088\n");
+           {
+             FILE *f_rom=fopen("rom.bin", "r");
+            
+             if (f_rom == NULL) {
+                   fprintf(stderr,"   Can't open 'rom.bin' for reading.\n");
+	        } else {
+                unsigned int *rom_data=(unsigned int *)malloc(0x63000*sizeof(unsigned int));
+                                                              //62ccc last patch adress
+                if (fread(rom_data,0x63000*sizeof(unsigned char),1,f_rom)<1) {
+                    fprintf(stderr," File 'rom.bin' is truncated or corrupt.\n");                
+                }
+                cpu_physical_memory_write(0x40000000, rom_data, 0x63000*sizeof(unsigned int));
+                fprintf(stderr,"Rom is restored.\n");
+            }
+           }
+
+           break;
         case 0xcc:
            printf("EMAC_CLK_EN_REG %" PRIx64 "\n" ,val);
            // REG_SET_BIT(EMAC_CLK_EN_REG, EMAC_CLK_EN); 
@@ -950,6 +986,49 @@ static void esp_io_write(void *opaque, hwaddr addr,
 
 }
 
+static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+
+    printf("wifi read %" PRIx64 " \n",addr);
+    switch(addr) {
+    case 0xe04c:
+        return 0xffffffff;
+        break;
+    case 0xe0c4:
+        return 0xffffffff;
+        break;
+    case 0x607c:
+        return 0xffffffff;
+        break;
+    case 0x1c018:
+        //return 0;
+        return 0x980020b6;
+        // Some difference should land between these values
+              // 0x980020c0;
+              // 0x980020b0;
+        //return   0x800000;
+    case 0x33c00:
+        return 0x980020b6+0x980020b0;
+        //return 0;
+        //return 
+    default:
+        break;
+    }
+
+    return 0x0;
+}
+
+
+static void esp_wifi_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+
+}
+
+
+
 static const MemoryRegionOps esp_io_ops = {
     .read = esp_io_read,
     .write = esp_io_write,
@@ -971,6 +1050,8 @@ static uint64_t translate_esp32_address(void *opaque, uint64_t addr)
 {
     return addr;
 }
+
+
 
 static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 {
@@ -1019,7 +1100,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
         if (n==0) {
            env->sregs[PRID] = 0xCDCD;
         } else {
-           env->sregs[PRID] = 0xABAB;            
+           env->sregs[PRID] = 0xABAB;
+           APPcpu = cpu;            
         }
         qemu_register_reset(lx60_reset, cpu);
         /* Need MMU initialized prior to ELF loading,
