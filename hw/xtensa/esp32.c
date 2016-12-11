@@ -1190,8 +1190,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //    serial_hds[0] = qemu_chr_new("serial0", "null",NULL);
     //}
 
-    esp32_serial_init(system_io, 0x40000, "esp32.uart0",
-                        xtensa_get_extint(env, 5), serial_hds[0]);
+    //esp32_serial_init(system_io, 0x40000, "esp32.uart0",
+    //                    xtensa_get_extint(env, 5), serial_hds[0]);
 
     //printf("No call to serial__mm_init\n");
 
