@@ -780,6 +780,14 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x13;
            break;
         
+        case 0x47004:
+            //  READ_PERI_REG(FRC_TIMER_COUNT_REG(0));
+            {
+                static int timerCountReg=0;
+                timerCountReg++;  // Ticks??
+                return(timerCountReg);
+            }
+            break;
         case 0x48044:
            printf("RTC_CNTL_INT_ST_REG 3ff48044=0x0\n");
            return 0x0;
@@ -788,6 +796,11 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         case 0x48034:
            printf("RTC_CNTL_RESET_STATE_REG 3ff48034=3390\n");
            return 0x0003390;
+           break;
+
+    case 0x48854:
+           printf("SENS_SAR_MEAS_START1_REG,3ff48854 =ffffffff\n");        
+           return 0xffffffff;
            break;
 
        case 0x480b4:
@@ -811,11 +824,12 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x01;
            break;
 
-       case 0x5a5a018:
+       case 0x5a018:
            printf("EFUSE_BLK0_RDATA6_REG 3ff5a018=01\n");
            return 0x01;
            break;
-
+           //case 0xb05f0:
+           //printf(" boot_time_lock 3ffb05f0=01\n");
 
        case 0x5f06c:
            printf("TIMG_RTCCALICFG1_REG 3ff5f06c=25\n");
@@ -1062,6 +1076,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     XtensaCPU *cpu = NULL;
     CPUXtensaState *env = NULL;
     MemoryRegion *ram,*ram1, *rom, *system_io;  // *rambb,
+    MemoryRegion *ulp;
     static MemoryRegion *wifi_io;
 
     DriveInfo *dinfo;
@@ -1130,12 +1145,26 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     vmstate_register_ram_global(ram);
     memory_region_add_subregion(system_memory, 0x20000000, ram);
 
+
+
+
     ram1 = g_malloc(sizeof(*ram1));
     memory_region_init_ram(ram1, NULL, "iram1",  0xBFFFFF,  
                            &error_abort);
 
     vmstate_register_ram_global(ram1);
     memory_region_add_subregion(system_memory,0x40000000, ram1);
+
+
+// ULP
+
+    ulp = g_malloc(sizeof(*ulp));
+                                                 // should be 8kb 
+    memory_region_init_ram(ulp, NULL, "ulpram",  0x2000,  
+                           &error_abort);
+
+    vmstate_register_ram_global(ulp);
+    memory_region_add_subregion(system_memory,0x50000000, ulp);
 
 
 
