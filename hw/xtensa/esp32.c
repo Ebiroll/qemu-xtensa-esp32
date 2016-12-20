@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, Max Filippov, Open Source and Linux Lab.
+ * Copyright (c) 2016, Max Filippov, Open Source and Linux Lab.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,6 +43,7 @@ esp_err_t ulp_run(uint32_t entry_point)
     return ESP_OK;
 }
 #endif
+
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu-common.h"
@@ -67,6 +68,11 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include "hw/isa/isa.h"
 #include <poll.h>
 #include <error.h>
+
+typedef struct Esp32 {
+    XtensaCPU *cpu[2];
+} Esp32;
+
 
 bool gdb_serial_connected=false;
 #define MAX_GDB_BUFF  2*4096
@@ -565,8 +571,8 @@ static uint64_t ulp_read(void *opaque, hwaddr addr,
 
     //ULP_State *s = opaque;
     switch (addr) {
-    case 0x0: /*build date code*/
-        return 0x09272011;
+    case 0x0: /*boot start time*/
+        return 0x0;
     }
     return 0;
 }
@@ -578,7 +584,7 @@ static void ulp_write(void *opaque, hwaddr addr,
     printf("ulp write %" PRIx64 " \n",addr);
 
     switch (addr) {
-    case 0x8: /*LEDs (off = 0, on = 1)*/
+    case 0x0: 
         //s->leds = val;
         break;
     }
@@ -659,61 +665,20 @@ static void esp_xtensa_ccompare_cb(void *opaque)
 
 static void esp32_reset(void *opaque)
 {
-    XtensaCPU *cpu = opaque;
+    Esp32 *esp32 = opaque;
+    int i;
 
-    cpu_reset(CPU(cpu));
+    for (i = 0; i < 2; ++i) {
 
+        cpu_reset(CPU(esp32->cpu[i]));
+        xtensa_runstall(&esp32->cpu[i]->env, i > 0);
 
-    CPUXtensaState *env = &cpu->env;
+       CPUXtensaState *env = &esp32->cpu[i]->env;
 
-    env->ccompare_timer =
-        timer_new_ns(QEMU_CLOCK_VIRTUAL, &esp_xtensa_ccompare_cb, cpu);
+      env->ccompare_timer =
+       timer_new_ns(QEMU_CLOCK_VIRTUAL, &esp_xtensa_ccompare_cb, esp32->cpu[i]);
 
-
-    env->sregs[146] = 0xABAB;
-
-
-}
-
-static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
-        unsigned size)
-{
-
-    printf("wifi read %" PRIx64 " \n",addr);
-    switch(addr) {
-    case 0xe04c:
-        return 0xffffffff;
-        break;
-    case 0xe0c4:
-        return 0xffffffff;
-        break;
-    case 0x607c:
-        return 0xffffffff;
-        break;
-    case 0x1c018:
-        //return 0;
-        return 0x980020b6;
-        // Some difference should land between these values
-              // 0x980020c0;
-              // 0x980020b0;
-        //return   0x800000;
-    case 0x33c00:
-        return 0x980020b6+0x980020b0;
-        //return 0;
-        //return 
-    default:
-        break;
     }
-
-    return 0x0;
-}
-
-
-static void esp_wifi_write(void *opaque, hwaddr addr,
-        uint64_t val, unsigned size)
-{
-    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
-
 }
 
 
@@ -723,19 +688,33 @@ static unsigned int sim_RTC_CNTL_STORE5_REG=0;
 
 static unsigned int sim_DPORT_PRO_CACHE_CTRL_REG=0x28;
 
+
+
 //  0x3ff5f06c 
 // TIMG_RTCCALICFG1_REG 3ff5f06c=25
+
+static unsigned int sim_DPORT_APP_CACHE_CTRL_REG=0x28;
+
+static unsigned int sim_DPORT_APPCPU_CTRL_D_REG=0;
+
+
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
 {
-    if (addr!=0x04001c && (addr<0x69440 || addr>0x6947c)
-    ) printf("io read %" PRIx64 " \n",addr);
+    if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
     switch (addr) {
+
        case 0x38:
-           printf(" DPORT_PRO_CACHE_CTRL_REG  3ff00038=%08X\n",28);
-           return 0x28;
+           // PRO cpu is busy reading this
+           //printf(" DPORT_APPCPU_CTRL_D_REG  3ff00038");
+           //return 0x28;
+           return sim_DPORT_APPCPU_CTRL_D_REG;
            break;
+
+           //case 0x38:
+           //printf("DPORT_APPCPU_CTRL_D_REG 3ff00038\n");
+           // break;
 
        case 0x40:
            printf(" DPORT_PRO_CACHE_CTRL_REG  3ff00040=%08X\n",sim_DPORT_PRO_CACHE_CTRL_REG);
@@ -748,8 +727,9 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            break;
 
        case 0x58:
-           printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058=0x01\n");
-           return 0x01;
+           printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058=%08X\n",sim_DPORT_APP_CACHE_CTRL_REG);
+           // OLAS was 1
+           return sim_DPORT_APP_CACHE_CTRL_REG;
            break;
 
       case 0x3F0:
@@ -757,6 +737,11 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x80;
            break;
 
+           //while (GET_PERI_REG_BITS2(DPORT_APP_DCACHE_DBUG0_REG, DPORT_APP_CACHE_S
+      case 0x418:
+           printf(" DPORT_APP_DCACHE_DBUG0_REG  3ff00418=0x80\n");
+           return 0x80;
+           break;
 
         case 0x42000:
            printf(" SPI_CMD_REG 3ff42000=0\n");
@@ -788,6 +773,14 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x13;
            break;
         
+        case 0x47004:
+            //  READ_PERI_REG(FRC_TIMER_COUNT_REG(0));
+            {
+                static int timerCountReg=0;
+                timerCountReg++;  // Ticks??
+                return(timerCountReg);
+            }
+            break;
         case 0x48044:
            printf("RTC_CNTL_INT_ST_REG 3ff48044=0x0\n");
            return 0x0;
@@ -796,6 +789,11 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         case 0x48034:
            printf("RTC_CNTL_RESET_STATE_REG 3ff48034=3390\n");
            return 0x0003390;
+           break;
+
+    case 0x48854:
+           printf("SENS_SAR_MEAS_START1_REG,3ff48854 =ffffffff\n");        
+           return 0xffffffff;
            break;
 
        case 0x480b4:
@@ -818,11 +816,12 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x01;
            break;
 
-       case 0x5a5a018:
+       case 0x5a018:
            printf("EFUSE_BLK0_RDATA6_REG 3ff5a018=01\n");
            return 0x01;
            break;
-
+           //case 0xb05f0:
+           //printf(" boot_time_lock 3ffb05f0=01\n");
 
        case 0x5f06c:
            printf("TIMG_RTCCALICFG1_REG 3ff5f06c=25\n");
@@ -848,12 +847,17 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
                 if (addr!=0x04001c) printf("UART READ");
             }
           }
-          //if (addr!=0x04001c) printf("\n");
+
+          if (addr!=0x04001c) printf("\n");
+
     }
 
     return 0x0;
 }
 
+
+
+XtensaCPU *APPcpu = NULL;
 
 
 static void esp_io_write(void *opaque, hwaddr addr,
@@ -869,10 +873,72 @@ static void esp_io_write(void *opaque, hwaddr addr,
     }
     switch (addr) {
 
+        case 0x2c:
+            //SET_PERI_REG_MASK(DPORT_APPCPU_CTRL_A_REG, DPORT_APPCPU_RESETTING); 
+            if (val==1) {
+                printf("DPORT_APPCPU_CTRL_A_REG 0x3ff0002c\n");
+                if (APPcpu) {
+                    printf("RESET 0x3ff0002c\n");
+                    //CPUClass *cc = CPU_CLASS(APPcpu);
+                    //XtensaCPUClass *xcc = XTENSA_CPU_GET_CLASS(APPcpu);
+                    CPUXtensaState *env = &APPcpu->env;
+                    //qemu_register_reset(lx60_reset, APPcpu);
+                    //cc->reset(env);
+                    env->exception_taken = 0;
+                    env->pc = env->config->exception_vector[EXC_RESET];
+                    env->sregs[LITBASE] &= ~1;
+                    env->sregs[PS] = xtensa_option_enabled(env->config,
+                                                           XTENSA_OPTION_INTERRUPT) ? 0x1f : 0x10;
+                    env->sregs[VECBASE] = env->config->vecbase;
+                    env->sregs[IBREAKENABLE] = 0;
+                    env->sregs[MEMCTL] = MEMCTL_IL0EN & env->config->memctl_mask;
+                    env->sregs[CACHEATTR] = 0x22222222;
+                    env->sregs[ATOMCTL] = xtensa_option_enabled(env->config,
+                                                                XTENSA_OPTION_ATOMCTL) ? 0x28 : 0x15;
+                    env->sregs[CONFIGID0] = env->config->configid[0];
+                    env->sregs[CONFIGID1] = env->config->configid[1];
+
+                    env->pending_irq_level = 0;
+		    xtensa_runstall(env,false);
+                    //reset_mmu(env);
+                }
+            }
+            break; 
+
+        case 0x38:
+            printf("DPORT_APPCPU_CTRL_D_REG 3ff00038\n");
+            sim_DPORT_APPCPU_CTRL_D_REG=val;
+            break;
+
         case 0x40:
             printf("DPORT_PRO_CACHE_CTRL_REG 3ff00040\n");
             sim_DPORT_PRO_CACHE_CTRL_REG=val;
            break; 
+        case 0x58:
+           printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058\n");
+           sim_DPORT_APP_CACHE_CTRL_REG=val;
+           break;
+
+        case 0x88:
+            // TODO!! CHECK IF UNUSED, Just unpatches the rom patches
+           printf(" OLAS_EMULATION_ROM_UNPATCH  3ff00088\n");
+           {
+             FILE *f_rom=fopen("rom.bin", "r");
+            
+             if (f_rom == NULL) {
+                   fprintf(stderr,"   Can't open 'rom.bin' for reading.\n");
+	        } else {
+                 unsigned int *rom_data=(unsigned int *)malloc(0x63000*sizeof(unsigned int));
+                                                              //62ccc last patch adress
+                 if (fread(rom_data,0x63000*sizeof(unsigned char),1,f_rom)<1) {
+                    fprintf(stderr," File 'rom.bin' is truncated or corrupt.\n");                
+                 }
+                 cpu_physical_memory_write(0x40000000, rom_data, 0x63000*sizeof(unsigned char));
+                fprintf(stderr,"Rom is restored.\n");
+            }
+           }
+
+           break;
         case 0xcc:
            printf("EMAC_CLK_EN_REG %" PRIx64 "\n" ,val);
            // REG_SET_BIT(EMAC_CLK_EN_REG, EMAC_CLK_EN); 
@@ -935,6 +1001,49 @@ static void esp_io_write(void *opaque, hwaddr addr,
 
 }
 
+static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+
+    printf("wifi read %" PRIx64 " \n",addr);
+    switch(addr) {
+    case 0xe04c:
+        return 0xffffffff;
+        break;
+    case 0xe0c4:
+        return 0xffffffff;
+        break;
+    case 0x607c:
+        return 0xffffffff;
+        break;
+    case 0x1c018:
+        //return 0;
+        return 0x980020b6;
+        // Some difference should land between these values
+              // 0x980020c0;
+              // 0x980020b0;
+        //return   0x800000;
+    case 0x33c00:
+        return 0x980020b6+0x980020b0;
+        //return 0;
+        //return 
+    default:
+        break;
+    }
+
+    return 0x0;
+}
+
+
+static void esp_wifi_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+
+}
+
+
+
 static const MemoryRegionOps esp_io_ops = {
     .read = esp_io_read,
     .write = esp_io_write,
@@ -957,13 +1066,18 @@ static uint64_t translate_esp32_address(void *opaque, uint64_t addr)
     return addr;
 }
 
+
+
 static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 {
     int be = 0;
+    int i;
 
+    Esp32 *esp32 = g_malloc0(sizeof(*esp32));
     MemoryRegion *system_memory = get_system_memory();
     XtensaCPU *cpu = NULL;
     CPUXtensaState *env = NULL;
+
     MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem;
     static MemoryRegion *wifi_io;
 
@@ -977,7 +1091,6 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     const char *kernel_cmdline = qemu_opt_get(machine_opts, "append");
     const char *dtb_filename = qemu_opt_get(machine_opts, "dtb");
     const char *initrd_filename = qemu_opt_get(machine_opts, "initrd");
-    int n;
 
     pthread_t pgdb_socket_thread;
         
@@ -987,33 +1100,29 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
         printf("Failed to create gdb connection thread\n");
     }
 
-
     if (!cpu_model) {
-        cpu_model = XTENSA_DEFAULT_CPU_MODEL;
+        cpu_model = "esp32";
     }
 
-    for (n = 0; n < smp_cpus; n++) {
-        cpu = cpu_xtensa_init(cpu_model);
+
+    for (i = 0; i < 2; ++i) {
+        static const uint32_t prid[] = {
+            0xcdcd,
+            0xabab,
+        };
+        XtensaCPU *cpu = cpu_xtensa_init(cpu_model);
+
         if (cpu == NULL) {
             error_report("unable to find CPU definition '%s'",
                          cpu_model);
             exit(EXIT_FAILURE);
         }
-        env = &cpu->env;
 
-        if (n==0) {
-           env->sregs[PRID] = 0xCDCD;
-        } else {
-           env->sregs[PRID] = 0xABAB;            
-        }
-        qemu_register_reset(esp32_reset, cpu);
-        /* Need MMU initialized prior to ELF loading,
-         * so that ELF gets loaded into virtual addresses
-         */
-        cpu_reset(CPU(cpu));
+        esp32->cpu[i] = cpu;
+        cpu->env.sregs[PRID] = prid[i];
     }
 
-    // Internal rom, 0x4000_0000 ~ 0x4005_FFFF
+    qemu_register_reset(esp32_reset, esp32);
 
 
     // Map all as ram 
@@ -1026,6 +1135,9 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     vmstate_register_ram_global(ram);
     memory_region_add_subregion(system_memory, 0x20000000, ram);
 
+
+
+
     ram1 = g_malloc(sizeof(*ram1));
     memory_region_init_ram(ram1, NULL, "iram1",  0xBFFFFF,  
                            &error_abort);
@@ -1033,6 +1145,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     vmstate_register_ram_global(ram1);
     memory_region_add_subregion(system_memory,0x40000000, ram1);
 
+
+// ULP
 
 
     ulp_slowmem = g_malloc(sizeof(*ulp_slowmem));
@@ -1083,7 +1197,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     if (nd_table[0].used) {
         printf("Open net\n");
         open_net_init(system_memory,0x3ff69000,0x3ff69400 , 0x3FFF8000,
-              env->irq_inputs[9], nd_table);   //   xtensa_get_extint(env, 9)
+                      esp32->cpu[0]->env.irq_inputs[9]  //env->irq_inputs[9]
+                      , nd_table);   //   xtensa_get_extint(env, 9)
     } 
 
 
@@ -1093,7 +1208,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //}
 
     //esp32_serial_init(system_io, 0x40000, "esp32.uart0",
-   //                     xtensa_get_extint(env, 5), serial_hds[0]);
+    //                    xtensa_get_extint(env, 5), serial_hds[0]);
 
     //printf("No call to serial__mm_init\n");
 
@@ -1146,7 +1261,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     /* Use kernel file name as current elf to load and run */
     if (kernel_filename) {
-        uint32_t entry_point = env->pc;
+        uint32_t entry_point =  esp32->cpu[0]->env.pc; //env->pc;
         size_t bp_size = 3 * get_tag_size(0); /* first/last and memory tags */
         //uint32_t tagptr = 0xfe000000 + board->sram_size;
         //uint32_t cur_tagptr;
@@ -1247,13 +1362,14 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
                 exit(EXIT_FAILURE);
             }
         }
-        if (entry_point != env->pc) {
+        if (entry_point !=esp32->cpu[0]->env.pc) {
+            env = (CPUXtensaState *) &esp32->cpu[0]->env;
             // elf entypoint differs, set up 
             printf("Elf entry %08X\n",entry_point);
             static const uint8_t jx_a0[] = {
                 0xa0, 0, 0,
-            };
-            env->regs[0] = entry_point;
+            };            
+            esp32->cpu[0]->env.regs[0] = entry_point;
 
             cpu_physical_memory_write(env->pc, jx_a0, sizeof(jx_a0));
 
@@ -1284,19 +1400,21 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
                 if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
                    printf(" File 'rom.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned int));
+                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned char));
+                fclose(f_rom);
             }
 
             FILE *f_rom1=fopen("rom1.bin", "r");
             
-            if (f_rom == NULL) {
+            if (f_rom1 == NULL) {
                printf("   Can't open 'rom1.bin' for reading.\n");
 	        } else {
                 unsigned int *rom1_data=(unsigned int *)malloc(0x10000*sizeof(unsigned int));
                 if (fread(rom1_data,0x10000*sizeof(unsigned char),1,f_rom1)<1) {
                    printf(" File 'rom1.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned int));
+                cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
+                fclose(f_rom1);
             }
 
 
@@ -1407,7 +1525,7 @@ static void xtensa_esp32_class_init(ObjectClass *oc, void *data)
 
     mc->desc = "esp32 DEV (esp32)";
     mc->init = xtensa_esp32_init;
-    mc->max_cpus = 4;
+    mc->max_cpus = 2;
 
 }
 

@@ -79,7 +79,6 @@ static TCGv_env cpu_env;
 static TCGv_i32 cpu_pc;
 static TCGv_i32 cpu_R[16];
 static TCGv_i32 cpu_FR[16];
-static TCGv_i64 cpu_FRD[16];
 static TCGv_i32 cpu_SR[256];
 static TCGv_i32 cpu_UR[256];
 
@@ -132,14 +131,10 @@ static const XtensaReg sregnames[256] = {
     [WINDOW_START] = XTENSA_REG("WINDOW_START",
             XTENSA_OPTION_WINDOWED_REGISTER),
     [PTEVADDR] = XTENSA_REG("PTEVADDR", XTENSA_OPTION_MMU),
-    [F64R_LO] = XTENSA_REG("F64R_LO", XTENSA_OPTION_FP_COPROCESSOR),
-    [F64R_HI] = XTENSA_REG("F64R_HI", XTENSA_OPTION_FP_COPROCESSOR),
-    [F64S] = XTENSA_REG("F64S", XTENSA_OPTION_FP_COPROCESSOR),
     [RASID] = XTENSA_REG("RASID", XTENSA_OPTION_MMU),
     [ITLBCFG] = XTENSA_REG("ITLBCFG", XTENSA_OPTION_MMU),
     [DTLBCFG] = XTENSA_REG("DTLBCFG", XTENSA_OPTION_MMU),
     [IBREAKENABLE] = XTENSA_REG("IBREAKENABLE", XTENSA_OPTION_DEBUG),
-    [MEMCTL] = XTENSA_REG_BITS("MEMCTL", XTENSA_OPTION_ALL),
     [CACHEATTR] = XTENSA_REG("CACHEATTR", XTENSA_OPTION_CACHEATTR),
     [ATOMCTL] = XTENSA_REG("ATOMCTL", XTENSA_OPTION_ATOMCTL),
     [IBREAKA] = XTENSA_REG("IBREAKA0", XTENSA_OPTION_DEBUG),
@@ -205,9 +200,6 @@ static const XtensaReg uregnames[256] = {
     [THREADPTR] = XTENSA_REG("THREADPTR", XTENSA_OPTION_THREAD_POINTER),
     [FCR] = XTENSA_REG("FCR", XTENSA_OPTION_FP_COPROCESSOR),
     [FSR] = XTENSA_REG("FSR", XTENSA_OPTION_FP_COPROCESSOR),
-    [F64R_LO] = XTENSA_REG("F64R_LO", XTENSA_OPTION_FP_COPROCESSOR),
-    [F64R_HI] = XTENSA_REG("F64R_HI", XTENSA_OPTION_FP_COPROCESSOR),
-    [F64S] = XTENSA_REG("F64S", XTENSA_OPTION_FP_COPROCESSOR)
 };
 
 void xtensa_translate_init(void)
@@ -325,12 +317,14 @@ static void gen_left_shift_sar(DisasContext *dc, TCGv_i32 sa)
 
 static void gen_advance_ccount(DisasContext *dc)
 {
+#ifndef CONFIG_USER_ONLY
     if (dc->ccount_delta > 0) {
         TCGv_i32 tmp = tcg_const_i32(dc->ccount_delta);
         gen_helper_advance_ccount(cpu_env, tmp);
         tcg_temp_free(tmp);
     }
     dc->ccount_delta = 0;
+#endif
 }
 
 static void gen_exception(DisasContext *dc, int excp)
@@ -520,7 +514,7 @@ static bool gen_check_sr(DisasContext *dc, uint32_t sr, unsigned access)
         } else {
             qemu_log_mask(LOG_UNIMP, "SR %d is not implemented\n", sr);
         }
-        gen_exception_cause(dc, ILLEGAL_INSTRUCTION_CAUSE);
+        //gen_exception_cause(dc, ILLEGAL_INSTRUCTION_CAUSE);
         return false;
     } else if (!(sregnames[sr].access & access)) {
         static const char * const access_text[] = {
@@ -639,11 +633,6 @@ static void gen_wsr_ibreakenable(DisasContext *dc, uint32_t sr, TCGv_i32 v)
 {
     gen_helper_wsr_ibreakenable(cpu_env, v);
     gen_jumpi_check_loop_end(dc, 0);
-}
-
-static void gen_wsr_memctl(DisasContext *dc, uint32_t sr, TCGv_i32 v)
-{
-    gen_helper_wsr_memctl(cpu_env, v);
 }
 
 static void gen_wsr_atomctl(DisasContext *dc, uint32_t sr, TCGv_i32 v)
@@ -779,7 +768,6 @@ static void gen_wsr(DisasContext *dc, uint32_t sr, TCGv_i32 s)
         [ITLBCFG] = gen_wsr_tlbcfg,
         [DTLBCFG] = gen_wsr_tlbcfg,
         [IBREAKENABLE] = gen_wsr_ibreakenable,
-        [MEMCTL] = gen_wsr_memctl,
         [ATOMCTL] = gen_wsr_atomctl,
         [IBREAKA] = gen_wsr_ibreaka,
         [IBREAKA + 1] = gen_wsr_ibreaka,
@@ -820,42 +808,6 @@ static void gen_wur(uint32_t ur, TCGv_i32 s)
     default:
         tcg_gen_mov_i32(cpu_UR[ur], s);
         break;
-    }
-}
-
-static void gen_rur(TCGv_i32 d, uint32_t ur)
-{
-    switch (ur) {
-    //case FCR:
-    //    gen_helper_rur_fcr(d,cpu_env);
-    //    break;
-
-    case FSR:
-        gen_helper_rur_fsr(d, cpu_env);
-        break;
-
-    default:
-        tcg_gen_mov_i32(d, cpu_UR[ur]);
-        break;
-    }
-}
-
-static inline void gen_mov_to_fr_32(DisasContext *dc, unsigned fr, TCGv_i32 v)
-{
-    if (option_enabled(dc, XTENSA_OPTION_DFP_COPROCESSOR)) {
-        tcg_gen_extu_i32_i64(cpu_FRD[fr], v);
-    } else {
-        tcg_gen_mov_i32(cpu_FR[fr], v);
-    }
-}
-
-static inline void gen_mov_from_fr_32(DisasContext *dc, TCGv_i32 v, unsigned fr)
-{
-    if (option_enabled(dc, XTENSA_OPTION_DFP_COPROCESSOR)) {
-        // OLAS tcg_gen_trunc_i64_i32(v, cpu_FRD[fr]);
-		// tcg_gen_extu_i64_i32(v, cpu_FRD[fr]);
-    } else {
-        tcg_gen_mov_i32(v, cpu_FR[fr]);
     }
 }
 
@@ -1274,13 +1226,16 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                         break;
 
                     case 1: /*SIMCALL*/
+#ifndef CONFIG_USER_ONLY
                         if (semihosting_enabled()) {
                             if (gen_check_privilege(dc)) {
                                 gen_helper_simcall(cpu_env);
                             }
-                        } else {
+                        } else
+#endif
+                        {
                             qemu_log_mask(LOG_GUEST_ERROR, "SIMCALL but semihosting is disabled\n");
-                            gen_exception_cause(dc, ILLEGAL_INSTRUCTION_CAUSE);
+                            //gen_exception_cause(dc, ILLEGAL_INSTRUCTION_CAUSE);
                         }
                         break;
 
@@ -1402,7 +1357,6 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
 
                 case 6: /*RER*/
                     TBD();
-                    printf("HOST RER TBD\n");
                     break;
 
                 case 7: /*WER*/
@@ -1925,7 +1879,6 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                     } else {
                         qemu_log_mask(LOG_UNIMP, "RUR %d not implemented, ", st);
                         TBD();
-                        // OLAS                        
                     }
                 }
                 break;
@@ -1937,8 +1890,6 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                     } else {
                         qemu_log_mask(LOG_UNIMP, "WUR %d not implemented, ", RSR_SR);
                         TBD();
-                        //wur_fsr();
-						//gen_wur(RSR_SR,cpu_R[RRR_T]);
                     }
                 }
                 break;
@@ -2053,49 +2004,6 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                                     OP2, RRR_R + 1);
                 break;
             }
-
-#define gen_fp_op1(op, out, in) \
-    do {\
-        TCGv_i32 r = tcg_temp_new_i32(); \
-        TCGv_i32 s = tcg_temp_new_i32(); \
-        \
-        gen_mov_from_fr_32(dc, s, in); \
-        gen_helper_##op##_s(r, s); \
-        gen_mov_to_fr_32(dc, out, r); \
-        tcg_temp_free(r); \
-        tcg_temp_free(s); \
-    } while (0)
-
-#define gen_fp_op2(op, out, in1, in2) \
-    do {\
-        TCGv_i32 r = tcg_temp_new_i32(); \
-        TCGv_i32 s = tcg_temp_new_i32(); \
-        TCGv_i32 t = tcg_temp_new_i32(); \
-        \
-        gen_mov_from_fr_32(dc, s, in1); \
-        gen_mov_from_fr_32(dc, t, in2); \
-        gen_helper_##op##_s(r, cpu_env, s, t); \
-        gen_mov_to_fr_32(dc, out, r); \
-        tcg_temp_free(r); \
-        tcg_temp_free(s); \
-        tcg_temp_free(t); \
-    } while (0)
-
-#define gen_fp_op3(op, inout, in1, in2) \
-    do {\
-        TCGv_i32 r = tcg_temp_new_i32(); \
-        TCGv_i32 s = tcg_temp_new_i32(); \
-        TCGv_i32 t = tcg_temp_new_i32(); \
-        \
-        gen_mov_from_fr_32(dc, r, inout); \
-        gen_mov_from_fr_32(dc, s, in1); \
-        gen_mov_from_fr_32(dc, t, in2); \
-        gen_helper_##op##_s(r, cpu_env, r, s, t); \
-        gen_mov_to_fr_32(dc, inout, r); \
-        tcg_temp_free(r); \
-        tcg_temp_free(s); \
-        tcg_temp_free(t); \
-    } while (0)
 
             HAS_OPTION(XTENSA_OPTION_FP_COPROCESSOR);
             switch (OP2) {
@@ -2229,10 +2137,6 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                 break;
             }
             break;
-
-#undef gen_fp_op1
-#undef gen_fp_op2
-#undef gen_fp_op3
 
         case 11: /*FP1*/
             /*DEPBITS*/
@@ -3313,17 +3217,6 @@ void xtensa_cpu_dump_state(CPUState *cs, FILE *f,
             cpu_fprintf(f, "F%02d=%08x (%+10.8e)%c", i,
                     float32_val(env->fregs[i].f32[FP_F32_LOW]),
                     *(float *)(env->fregs[i].f32 + FP_F32_LOW),
-                    (i % 2) == 1 ? '\n' : ' ');
-        }
-    }
-
-    if (xtensa_option_enabled(env->config, XTENSA_OPTION_DFP_COPROCESSOR)) {
-        cpu_fprintf(f, "\n");
-
-        for (i = 0; i < 16; ++i) {
-            cpu_fprintf(f, "F%02d=%016"PRIx64" (%+20.16le)%c", i,
-                    float64_val(env->fregs[i].f64),
-                    *(double *)(&env->fregs[i].f64),
                     (i % 2) == 1 ? '\n' : ' ');
         }
     }
