@@ -882,8 +882,12 @@ static void esp_io_write(void *opaque, hwaddr addr,
                     //CPUClass *cc = CPU_CLASS(APPcpu);
                     //XtensaCPUClass *xcc = XTENSA_CPU_GET_CLASS(APPcpu);
                     CPUXtensaState *env = &APPcpu->env;
+
+                    xtensa_runstall(env,false);
+                    
                     //qemu_register_reset(lx60_reset, APPcpu);
                     //cc->reset(env);
+                    /*
                     env->exception_taken = 0;
                     env->pc = env->config->exception_vector[EXC_RESET];
                     env->sregs[LITBASE] &= ~1;
@@ -899,7 +903,7 @@ static void esp_io_write(void *opaque, hwaddr addr,
                     env->sregs[CONFIGID1] = env->config->configid[1];
 
                     env->pending_irq_level = 0;
-		    xtensa_runstall(env,false);
+                    */
                     //reset_mmu(env);
                 }
             }
@@ -1118,6 +1122,10 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
             exit(EXIT_FAILURE);
         }
 
+        if (i==1) {
+          APPcpu =cpu;
+        }
+        
         esp32->cpu[i] = cpu;
         cpu->env.sregs[PRID] = prid[i];
     }
