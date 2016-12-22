@@ -84,7 +84,7 @@ void *connection_handler(void *socket_desc);
 void *gdb_socket_thread(void *dummy);
 
 
-#define DEBUG_LOG(...) fprintf(stderr, __VA_ARGS__)
+#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
 
 #define DEFINE_BITS(prefix, reg, field, shift, len) \
     prefix##_##reg##_##field##_SHIFT = shift, \
@@ -355,45 +355,43 @@ static const MemoryRegionOps esp32_serial_ops = {
 
 /* SPI */
 
-// R_CONFIG,
-
 
 enum {
 ESP32_SPI_FLASH_CMD,     // 0
-ESP32_SPI_FLASH_ADDR,    // 8
-ESP32_SPI_FLASH_CTRL,    // 
-ESP32_SPI_FLASH_CTRL1,   
-ESP32_SPI_FLASH_STATUS,  // 
+ESP32_SPI_FLASH_ADDR,    // 08
+ESP32_SPI_FLASH_CTRL,    // 10
+ESP32_SPI_FLASH_CTRL1,   // 18
+ESP32_SPI_FLASH_STATUS,  // 20
 ESP32_SPI_FLASH_CTRL2,
-ESP32_SPI_FLASH_CLOCK,
+ESP32_SPI_FLASH_CLOCK,   // 30
 ESP32_SPI_FLASH_USER,
-ESP32_SPI_FLASH_USER1,
-ESP32_SPI_FLASH_USER2,  // 
-ESP32_MOSI_DLEN,
+ESP32_SPI_FLASH_USER1,   // 40
+ESP32_SPI_FLASH_USER2,   
+ESP32_MOSI_DLEN,         // 50
 ESP32_MISO_DLEN,
-ESP32_SLV_WR_STATUS,
+ESP32_SLV_WR_STATUS,     // 60
 ESP32_SPI_FLASH_PIN,
-ESP32_SPI_FLASH_SLAVE,  // 
+ESP32_SPI_FLASH_SLAVE,   // 70
 ESP32_SPI_FLASH_SLAVE1,
-ESP32_SPI_FLASH_SLAVE2,
+ESP32_SPI_FLASH_SLAVE2,  // 80
 ESP32_SPI_FLASH_SLAVE3,
-ESP32_SLV_WRBUF_DLEN,
-ESP32_SLV_RDBUF_DLEN,   //
-ESP32_CACHE_FCTRL,
+ESP32_SLV_WRBUF_DLEN,   // 90
+ESP32_SLV_RDBUF_DLEN,   
+ESP32_CACHE_FCTRL,      // a0
 ESP32_CACHE_SCTRL,
-ESP32_SRAM_CMD,
+ESP32_SRAM_CMD,         // b0
 ESP32_SRAM_DRD_CMD,
-sram_dwr_cmd,          // 
+sram_dwr_cmd,           // c0
 slv_rd_bit,
-reserved_68,
+reserved_68,            // d0
 //reserved_6c,
 reserved_70,
 //reserved_74,
-reserved_78,
+reserved_78,            // e0
 //reserved_7c,
 //uint32_t data_buf[16],                                  /*data buffer*/
 data_buf_00,
-data_buf_08,
+data_buf_08,           // f0
 data_buf_10,
 data_buf_18,
 tx_crc,                                        /*For SPI1  the value of crc32 for 256 bits data.*/
@@ -481,6 +479,7 @@ enum {
 
 
 typedef struct Esp32SpiState {
+    int spiNum;
     MemoryRegion iomem;
     //MemoryRegion cache;
     qemu_irq irq;
@@ -493,7 +492,7 @@ static uint64_t esp32_spi_read(void *opaque, hwaddr addr, unsigned size)
 {
     Esp32SpiState *s = opaque;
 
-    DEBUG_LOG("%s: +0x%02x: ", __func__, (uint32_t)addr);
+    DEBUG_LOG("%d %s: +0x%02x: ",s->spiNum, __func__, (uint32_t)addr);
     if (addr / 4 >= R_MAX || addr % 4 || size != 4) {
         DEBUG_LOG("SPI ADRESS ERROR 0\n");
         return 0;
@@ -505,9 +504,6 @@ static uint64_t esp32_spi_read(void *opaque, hwaddr addr, unsigned size)
 static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                             uint64_t val, unsigned size)
 {
-
-    DEBUG_LOG("spi_cmd\n");
-
     if (val & ESP32_SPI_FLASH_CMD_READ) {
         if (ESP32_SPI_GET(s, USER, FLASH_MODE)) {
             DEBUG_LOG("%s: READ FLASH 0x%02x@0x%08x\n",
@@ -522,6 +518,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
         }
     }
     if (val & ESP32_SPI_FLASH_CMD_WRDI) {
+        DEBUG_LOG("status write enable\n");
         s->reg[ESP32_SPI_FLASH_STATUS] &= ~ESP32_SPI_FLASH_STATUS_WRENABLE;
     }
     if (val & ESP32_SPI_FLASH_CMD_WREN) {
@@ -573,7 +570,12 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
         [ESP32_SPI_FLASH_CLOCK] = esp32_spi_clock,
     };
 
-    DEBUG_LOG("%s: +0x%02x = 0x%08x\n",
+    if (addr>=0x80 && addr <= 0x9c) {
+       DEBUG_LOG("SPI data 0x%08x\n",val);     
+    }
+
+
+    DEBUG_LOG("%d %s: +0x%02x = 0x%08x\n",s->spiNum,
             __func__, (uint32_t)addr, (uint32_t)val);
     if (addr / 4 >= R_MAX || addr % 4 || size != 4) {
         return;
@@ -602,7 +604,7 @@ static const MemoryRegionOps esp32_spi_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static Esp32SpiState *esp32_spi_init(MemoryRegion *address_space,
+static Esp32SpiState *esp32_spi_init(int spinum,MemoryRegion *address_space,
                                          hwaddr base, const char *name,
                                          MemoryRegion *cache_space,
                                          hwaddr cache_base,
@@ -610,6 +612,7 @@ static Esp32SpiState *esp32_spi_init(MemoryRegion *address_space,
                                          qemu_irq irq, void **flash_image)
 {
     Esp32SpiState *s = g_malloc(sizeof(Esp32SpiState));
+    s->spiNum=spinum;
 
     s->irq = irq;
     memory_region_init_io(&s->iomem, NULL, &esp32_spi_ops, s,
@@ -1566,12 +1569,12 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     }
 
 
-//spi = esp32_spi_init(system_io, 0x43000, "esp32.spi0",
+//spi = esp32_spi_init(1,system_io, 0x43000, "esp32.spi0",
 //                    system_memory, /*cache*/ 0x800000, "esp32.flash",
 //                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
 
-//spi = esp32_spi_init(system_io, 0x42000, "esp32.spi1",
+//spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 //                    system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
 //                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
