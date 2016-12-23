@@ -499,6 +499,11 @@ enum {
     ESP32_SPI_FLASH_BITS(USER2, COMMAND_BITLEN, 28, 4),
 };
 
+enum {
+    ESP32_SPI_FLASH_BITS(ADDR, ADDR_VALUE, 0, 24),
+    ESP32_SPI_FLASH_BITS(ADDR, ADDR_RESERVED, 25,6),
+};
+
 
 typedef struct Esp32SpiState {
     int spiNum;
@@ -558,6 +563,20 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     }
 }
 
+static void esp32_spi_write_address(Esp32SpiState *s, hwaddr addr,
+                                   uint64_t val, unsigned size)
+{
+        s->reg[ESP32_SPI_FLASH_ADDR] = val;
+
+        DEBUG_LOG("Address %s: TX %08x[%d reserved]\n",
+                  __func__,
+                  ESP32_SPI_GET(s, ADDR, ADDR_VALUE),
+                  ESP32_SPI_GET(s, ADDR, ADDR_RESERVED));
+
+
+}
+
+
 static void esp32_spi_write_ctrl(Esp32SpiState *s, hwaddr addr,
                                    uint64_t val, unsigned size)
 {
@@ -591,6 +610,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
     static void (* const handler[])(Esp32SpiState *s, hwaddr addr,
                                     uint64_t val, unsigned size) = {
         [ESP32_SPI_FLASH_CMD] = esp32_spi_cmd,
+        [ESP32_SPI_FLASH_ADDR] =esp32_spi_write_address,
         [ESP32_SPI_FLASH_CTRL] = esp32_spi_write_ctrl,
         [ESP32_SPI_FLASH_STATUS] = esp32_spi_status,
         [ESP32_SPI_FLASH_CLOCK] = esp32_spi_clock,
