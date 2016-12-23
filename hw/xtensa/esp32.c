@@ -357,68 +357,89 @@ static const MemoryRegionOps esp32_serial_ops = {
 
 
 enum {
-ESP32_SPI_FLASH_CMD,     // 0
-ESP32_SPI_FLASH_ADDR,    // 08
-ESP32_SPI_FLASH_CTRL,    // 10
-ESP32_SPI_FLASH_CTRL1,   // 18
-ESP32_SPI_FLASH_STATUS,  // 20
-ESP32_SPI_FLASH_CTRL2,
-ESP32_SPI_FLASH_CLOCK,   // 30
-ESP32_SPI_FLASH_USER,
-ESP32_SPI_FLASH_USER1,   // 40
+ESP32_SPI_FLASH_CMD,     // 00
+ESP32_SPI_FLASH_ADDR,    // 04
+ESP32_SPI_FLASH_CTRL,    // 08
+ESP32_SPI_FLASH_STATUS,  // 10
+ESP32_SPI_FLASH_CTRL2,   // 14
+ESP32_SPI_FLASH_CLOCK,   // 18
+ESP32_SPI_FLASH_USER,    // 1c
+ESP32_SPI_FLASH_USER1,   // 20 
 ESP32_SPI_FLASH_USER2,   
-ESP32_MOSI_DLEN,         // 50
+ESP32_MOSI_DLEN,         
 ESP32_MISO_DLEN,
-ESP32_SLV_WR_STATUS,     // 60
+ESP32_SLV_WR_STATUS,     // 30
 ESP32_SPI_FLASH_PIN,
-ESP32_SPI_FLASH_SLAVE,   // 70
+ESP32_SPI_FLASH_SLAVE,   
 ESP32_SPI_FLASH_SLAVE1,
-ESP32_SPI_FLASH_SLAVE2,  // 80
+ESP32_SPI_FLASH_SLAVE2,  // 40
 ESP32_SPI_FLASH_SLAVE3,
-ESP32_SLV_WRBUF_DLEN,   // 90
+ESP32_SLV_WRBUF_DLEN,   
 ESP32_SLV_RDBUF_DLEN,   
-ESP32_CACHE_FCTRL,      // a0
+ESP32_CACHE_FCTRL,      //   50
 ESP32_CACHE_SCTRL,
-ESP32_SRAM_CMD,         // b0
+ESP32_SRAM_CMD,         
 ESP32_SRAM_DRD_CMD,
-sram_dwr_cmd,           // c0
+sram_dwr_cmd,           // 60
 slv_rd_bit,
-reserved_68,            // d0
-//reserved_6c,
-reserved_70,
-//reserved_74,
-reserved_78,            // e0
-//reserved_7c,
+reserved_68,           
+reserved_6c,
+reserved_70,           // 70
+reserved_74,
+reserved_78,             
+reserved_7c,
 //uint32_t data_buf[16],                                  /*data buffer*/
-data_buf_00,
-data_buf_08,           // f0
-data_buf_10,
-data_buf_18,
-tx_crc,                                        /*For SPI1  the value of crc32 for 256 bits data.*/
- reserved_c4,
- reserved_c8,
-// reserved_cc,
- reserved_d0,
-// reserved_d4,
- reserved_d8,
-// reserved_dc,
- reserved_e0,
-// reserved_e4,
- reserved_e8,
-// reserved_ec,
-SPI_EXT0_REG,
-SPI_EXT1_REG,
-SPI_EXT2_REG,
-SPI_EXT3_REG,
-SPI_DMA_CONF,
+data_w0,           //  80
+data_w1,           
+data_w2,           
+data_w3,           
+data_w4,          //  90
+data_w5,
+data_w6,            
+data_w7,          
+data_w8,          //  a0
+data_w9,
+data_w10,
+data_w11,          
+data_w12,         // b0
+data_w13,
+data_w14,
+data_w15,
+tx_crc,           // c0                           /*For SPI1  the value of crc32 for 256 bits data.*/
+reserved_c4,
+reserved_c8,
+reserved_cc,
+reserved_d0,         // d0
+reserved_d4,
+reserved_d8,
+reserved_dc,
+reserved_e0,         // e0
+reserved_e4,
+reserved_e8,
+reserved_ec,
+SPI_EXT0_REG,       // f0
+SPI_EXT1_REG,       // f4
+SPI_EXT2_REG,       // f8
+SPI_EXT3_REG,       
+SPI_DMA_CONF,       // 100
 SPI_DMA_OUT_LINK,
 SPI_DMA_IN_LINK,
-SPI_DMA_STATUS,
-SPI_DMA_INT_ENA,
+SPI_DMA_STATUS,     
+SPI_DMA_INT_ENA,    // 110
 SPI_DMA_INT_RAW,
 SPI_DMA_INT_ST,
-SPI_DMA_INT_CLR,
-
+SPI_DMA_INT_CLR,      // 11c
+SPI_SUC_EOF_DES_ADDR, // 120
+SPI_INLINK_DSCR,      // 12c
+SPI_INLINK_DSCR_BF1,  // 130
+SPI_OUT_EOF_BFR_DES_ADDR, 
+SPI_OUT_EOF_DES_ADDR,
+SPI_OUTLINK_DSCR,
+SPI_OUTLINK_DSCR_BF0,  // 140
+SPI_OUTLINK_DSCR_BF1,
+SPI_DMA_RSTATUS,
+SPI_DMA_TSTATUS_REG,     // 14c
+SPI_DATE_REG=0x3fc/4,    // 3fc
 R_MAX = 0x100
 };
 
@@ -504,6 +525,9 @@ static uint64_t esp32_spi_read(void *opaque, hwaddr addr, unsigned size)
 static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                             uint64_t val, unsigned size)
 {
+    DEBUG_LOG("esp32_spi_cmd %08x\n",val);
+    //s->reg[addr / 4] = val;
+
     if (val & ESP32_SPI_FLASH_CMD_READ) {
         if (ESP32_SPI_GET(s, USER, FLASH_MODE)) {
             DEBUG_LOG("%s: READ FLASH 0x%02x@0x%08x\n",
@@ -518,10 +542,11 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
         }
     }
     if (val & ESP32_SPI_FLASH_CMD_WRDI) {
-        DEBUG_LOG("status write enable\n");
+        DEBUG_LOG("status wrdi\n");
         s->reg[ESP32_SPI_FLASH_STATUS] &= ~ESP32_SPI_FLASH_STATUS_WRENABLE;
     }
     if (val & ESP32_SPI_FLASH_CMD_WREN) {
+        DEBUG_LOG("status wren\n");
         s->reg[ESP32_SPI_FLASH_STATUS] |= ESP32_SPI_FLASH_STATUS_WRENABLE;
     }
     if (val & ESP32_SPI_FLASH_CMD_USR) {
@@ -1569,14 +1594,14 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     }
 
 
-//spi = esp32_spi_init(1,system_io, 0x43000, "esp32.spi0",
-//                    system_memory, /*cache*/ 0x800000, "esp32.flash",
-//                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
+spi = esp32_spi_init(1,system_io, 0x43000, "esp32.spi0",
+                    system_memory, /*cache*/ 0x800000, "esp32.flash",
+                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
 
-//spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
-//                    system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
-//                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
+spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
+                    system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
+                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
 
 
