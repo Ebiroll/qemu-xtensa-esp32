@@ -2,3 +2,4 @@ obj-y += pic_cpu.o
 obj-y += sim.o
 obj-y += xtfpga.o
 obj-y += esp32.o
+obj-y += MemoryMapped.o

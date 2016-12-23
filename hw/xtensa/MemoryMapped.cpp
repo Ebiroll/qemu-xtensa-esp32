@@ -147,8 +147,6 @@ bool MemoryMapped::open(const std::string& filename, size_t mappedBytes, CacheHi
 /// close file
 void MemoryMapped::close()
 {
-  _filesize = 0;
-
   // kill pointer
   if (_mappedView)
   {
@@ -178,6 +176,8 @@ void MemoryMapped::close()
 #endif
     _file = 0;
   }
+
+  _filesize = 0;
 }
 
 
@@ -320,3 +320,33 @@ int MemoryMapped::getpagesize()
   return sysconf(_SC_PAGESIZE); //::getpagesize();
 #endif
 }
+
+static MemoryMapped* memfile=NULL;
+
+#define FLASH_FILENAME   "esp32flash.bin"
+
+// QEMU, flash emulated f_files
+extern "C" const unsigned char* get_flashMemory() 
+{
+
+  FILE *file;
+
+ if (memfile!=NULL) {
+   return (memfile->getData());
+ }
+
+  int X = 4 * 1024 * 1024 ;
+  file = fopen(FLASH_FILENAME, "rw+");
+  // Posix only
+  ftruncate(fileno(file), X);
+  //fseek(fp, X , SEEK_SET);
+  fclose(file);
+
+  memfile=new MemoryMapped(FLASH_FILENAME);
+
+  if (memfile!=NULL) {
+   return (memfile->getData());
+  }
+
+}
+
