@@ -69,6 +69,10 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include <poll.h>
 #include <error.h>
 
+// From Memorymapped.cpp
+const unsigned char* get_flashMemory();
+
+
 typedef struct Esp32 {
     XtensaCPU *cpu[2];
 } Esp32;
@@ -390,43 +394,43 @@ reserved_74,
 reserved_78,             
 reserved_7c,
 //uint32_t data_buf[16],                                  /*data buffer*/
-data_w0,           //  80
+data_w0,               //  80
 data_w1,           
 data_w2,           
 data_w3,           
-data_w4,          //  90
+data_w4,               //  90
 data_w5,
 data_w6,            
 data_w7,          
-data_w8,          //  a0
+data_w8,               //  a0
 data_w9,
 data_w10,
 data_w11,          
-data_w12,         // b0
+data_w12,              // b0
 data_w13,
 data_w14,
 data_w15,
-tx_crc,           // c0                           /*For SPI1  the value of crc32 for 256 bits data.*/
+tx_crc,               // c0                  /*For SPI1  the value of crc32 for 256 bits data.*/
 reserved_c4,
 reserved_c8,
 reserved_cc,
-reserved_d0,         // d0
+reserved_d0,          // d0
 reserved_d4,
 reserved_d8,
 reserved_dc,
-reserved_e0,         // e0
+reserved_e0,          // e0
 reserved_e4,
 reserved_e8,
 reserved_ec,
-SPI_EXT0_REG,       // f0
-SPI_EXT1_REG,       // f4
-SPI_EXT2_REG,       // f8
+SPI_EXT0_REG,         // f0
+SPI_EXT1_REG,         // f4
+SPI_EXT2_REG,         // f8
 SPI_EXT3_REG,       
-SPI_DMA_CONF,       // 100
+SPI_DMA_CONF,         // 100
 SPI_DMA_OUT_LINK,
 SPI_DMA_IN_LINK,
 SPI_DMA_STATUS,     
-SPI_DMA_INT_ENA,    // 110
+SPI_DMA_INT_ENA,      // 110
 SPI_DMA_INT_RAW,
 SPI_DMA_INT_ST,
 SPI_DMA_INT_CLR,      // 11c
@@ -439,8 +443,8 @@ SPI_OUTLINK_DSCR,
 SPI_OUTLINK_DSCR_BF0,  // 140
 SPI_OUTLINK_DSCR_BF1,
 SPI_DMA_RSTATUS,
-SPI_DMA_TSTATUS_REG,     // 14c
-SPI_DATE_REG=0x3fc/4,    // 3fc
+SPI_DMA_TSTATUS_REG,   // 14c
+SPI_DATE_REG=0x3fc/4,  // 3fc
 R_MAX = 0x100
 };
 
@@ -492,6 +496,8 @@ enum {
 
 enum {
     ESP32_SPI_FLASH_BITS(USER, FLASH_MODE, 2, 1),
+    ESP32_SPI_FLASH_BITS(USER, COMMAND, 30, 1),
+    ESP32_SPI_FLASH_BITS(USER, ADDR, 31, 1),
 };
 
 enum {
@@ -501,7 +507,7 @@ enum {
 
 enum {
     ESP32_SPI_FLASH_BITS(ADDR, ADDR_VALUE, 0, 24),
-    ESP32_SPI_FLASH_BITS(ADDR, ADDR_RESERVED, 25,6),
+    ESP32_SPI_FLASH_BITS(ADDR, ADDR_RESERVED, 24,8),
 };
 
 
@@ -531,7 +537,7 @@ static uint64_t esp32_spi_read(void *opaque, hwaddr addr, unsigned size)
 static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                             uint64_t val, unsigned size)
 {
-    DEBUG_LOG("esp32_spi_cmd %08x\n",val);
+    DEBUG_LOG("-esp32_spi_cmd %08x\n",val);
     //s->reg[addr / 4] = val;
 
     if (val & ESP32_SPI_FLASH_CMD_READ) {
@@ -540,9 +546,6 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                       __func__,
                       ESP32_SPI_GET(s, ADDR, LENGTH),
                       ESP32_SPI_GET(s, ADDR, OFFSET));
-            //memcpy(s->reg + ESP32_SPI_FLASH_C0,
-            //       s->flash_image + ESP32_SPI_GET(s, ADDR, OFFSET),
-            //       (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c);
         } else {
             DEBUG_LOG("%s: READ ?????\n", __func__);
         }
@@ -560,6 +563,54 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                   __func__,
                   ESP32_SPI_GET(s, USER2, COMMAND_VALUE),
                   ESP32_SPI_GET(s, USER2, COMMAND_BITLEN));
+
+       int numBits=ESP32_SPI_GET(s, USER2, COMMAND_BITLEN);
+       int command=ESP32_SPI_GET(s, USER2, COMMAND_VALUE) & (( 1 << numBits) -1);
+       DEBUG_LOG("command %04x\n",command);
+       if (command==0x35) {
+           DEBUG_LOG("CMD 0x35 (RDSR2) read status register\n");
+       }
+       if (command==0x05) {
+           DEBUG_LOG("CMD 0x05 (RDSR).\n");
+       }       
+       if (command==0x03) {
+           DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
+           // TODO, ignore bit 0-7 !!!
+           unsigned int silly=ESP32_SPI_GET(s, ADDR, OFFSET) >> 8;
+           DEBUG_LOG("Silly %08X\n",silly);
+
+/*
+            unsigned int *data1=(unsigned int *)s->flash_image +silly;
+            int q=0;
+            for(q=0;q<16;q++) 
+            {
+                printf( "%08X", *data1);
+                data1++;
+                if (q%8==7) {
+                    printf("\n");
+                }
+            }
+*/
+
+
+            memcpy(&s->reg[data_w0],
+                   s->flash_image + silly,  // ESP32_SPI_GET(s, ADDR, OFFSET)
+                   4*16);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+/*
+                    unsigned int *data=(unsigned int *)&s->reg[data_w0];
+                    int j=0;
+                    for(j=0;j<16;j++) 
+                    {
+                        printf( "%08X", *data);
+                        data++;
+                        if (j%8==7) {
+                            printf("\n");
+                        }
+                    }
+*/
+
+
+       }               
     }
 }
 
@@ -567,6 +618,7 @@ static void esp32_spi_write_address(Esp32SpiState *s, hwaddr addr,
                                    uint64_t val, unsigned size)
 {
         s->reg[ESP32_SPI_FLASH_ADDR] = val;
+        //DEBUG_LOG("equal? %04X , %04X" , SPI_EXT2_REG*4,0xf8);
 
         DEBUG_LOG("Address %s: TX %08x[%d reserved]\n",
                   __func__,
@@ -581,6 +633,7 @@ static void esp32_spi_write_ctrl(Esp32SpiState *s, hwaddr addr,
                                    uint64_t val, unsigned size)
 {
     s->reg[ESP32_SPI_FLASH_CTRL] = val;
+    DEBUG_LOG("esp32_spi_write_ctrl,ENABLE_AHB?\n");
     //memory_region_set_enabled(&s->cache,
     //                          val & ESP32_SPI_FLASH_CTRL_ENABLE_AHB);
 }
@@ -663,6 +716,10 @@ static Esp32SpiState *esp32_spi_init(int spinum,MemoryRegion *address_space,
     s->irq = irq;
     memory_region_init_io(&s->iomem, NULL, &esp32_spi_ops, s,
                           name, 0x100);
+
+    s->flash_image=get_flashMemory();
+    *flash_image=s->flash_image;
+
     //memory_region_init_rom_device(&s->cache, NULL, NULL, s,
     //                              cache_name, ESP32_MAX_FLASH_SZ,
     //                              NULL);
@@ -1829,13 +1886,13 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
            };
 
             // Patch rom, SPIEraseSector 0x40062ccc
-            cpu_physical_memory_write(0x40062ccc+3, retw_n, sizeof(retw_n));
+            //cpu_physical_memory_write(0x40062ccc+3, retw_n, sizeof(retw_n));
 
             // Patch rom,  SPIWrite 0x40062d50
-            cpu_physical_memory_write(0x40062d50+3, retw_n, sizeof(retw_n));
+            //cpu_physical_memory_write(0x40062d50+3, retw_n, sizeof(retw_n));
 
             //rom_txdc_cal_init, 0x40004e10)
-            cpu_physical_memory_write(0x40004e10+3, retw_n, sizeof(retw_n));
+            //cpu_physical_memory_write(0x40004e10+3, retw_n, sizeof(retw_n));
 
             // Not working so well..
             // Patch rom,  ram_txdc_cal_v70 0x4008753b 

@@ -8,6 +8,7 @@
 
 #include <stdexcept>
 #include <cstdio>
+#include <stdlib.h>
 
 // OS-specific
 #ifdef _MSC_VER
@@ -335,8 +336,18 @@ extern "C" const unsigned char* get_flashMemory()
    return (memfile->getData());
  }
 
+ fprintf(stderr,"TRYING to MAP esp32flash.bin");
+
+
   int X = 4 * 1024 * 1024 ;
   file = fopen(FLASH_FILENAME, "rw+");
+  if (file==NULL) {
+     file = fopen(FLASH_FILENAME, "wb");    
+  }
+  if (file==NULL) {
+    fprintf(stderr,"esp32flash.bin missing\n");
+    exit(1);
+  }
   // Posix only
   ftruncate(fileno(file), X);
   //fseek(fp, X , SEEK_SET);
@@ -345,6 +356,17 @@ extern "C" const unsigned char* get_flashMemory()
   memfile=new MemoryMapped(FLASH_FILENAME);
 
   if (memfile!=NULL) {
+   fprintf(stderr,"MAPPED esp32flash.bin");
+   unsigned int *data=(unsigned int *)memfile->getData();
+   for(int j=0;j<1024;j++) 
+   {
+      printf( "%08X", *data);
+      data++;
+      if (j%8==7) {
+        printf("\n");
+      }
+   }
+
    return (memfile->getData());
   }
 
