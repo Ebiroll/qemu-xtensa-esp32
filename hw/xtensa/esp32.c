@@ -1078,6 +1078,11 @@ static unsigned int sim_RTC_CNTL_STORE5_REG=0;
 
 static unsigned int sim_DPORT_PRO_CACHE_CTRL_REG=0x28;
 
+static unsigned int sim_DPORT_PRO_CACHE_CTRL1_REG=0x8E6;
+
+static unsigned int sim_DPORT_APP_CACHE_CTRL1_REG=0x8E6;
+
+static unsigned int sim_DPORT_PRO_CACHE_LOCK_0_ADDR_REG=0;
 
 
 //  0x3ff5f06c 
@@ -1088,10 +1093,26 @@ static unsigned int sim_DPORT_APP_CACHE_CTRL_REG=0x28;
 static unsigned int sim_DPORT_APPCPU_CTRL_D_REG=0;
 
 
+static unsigned int pro_MMU_REG[0x2000];
+
+static unsigned int app_MMU_REG[0x2000];
+
+
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
 {
     if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
+
+    if (addr>=0x10000 && addr<0x11ffc) {
+        return(pro_MMU_REG[addr-0x10000]);
+    }
+
+    if (addr>=0x12000 && addr<0x13ffc) {
+        return(app_MMU_REG[addr-0x12000]);
+    }
+
+
+
 
     switch (addr) {
 
@@ -1102,24 +1123,31 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return sim_DPORT_APPCPU_CTRL_D_REG;
            break;
 
-           //case 0x38:
-           //printf("DPORT_APPCPU_CTRL_D_REG 3ff00038\n");
-           // break;
+      case 0x48:
+           printf("DPORT_PRO_CACHE_LOCK_0_ADDR_REG 3ff00048=%08X\n\n",sim_DPORT_PRO_CACHE_LOCK_0_ADDR_REG);
+           return sim_DPORT_PRO_CACHE_LOCK_0_ADDR_REG;
+           break;
 
        case 0x40:
            printf(" DPORT_PRO_CACHE_CTRL_REG  3ff00040=%08X\n",sim_DPORT_PRO_CACHE_CTRL_REG);
-           return 0x28;
+           return sim_DPORT_PRO_CACHE_CTRL_REG;
            break;
 
        case 0x44:
-           printf(" DPORT DPORT_PRO_CACHE_CTRL1_REG  3ff00044=8E6\n");
-           return 0x8E6;
+           printf("DPORT_PRO_CACHE_CTRL1_REG  3ff00044=8E6\n");
+           return sim_DPORT_PRO_CACHE_CTRL1_REG;
+           //return 0x8E6;
            break;
 
        case 0x58:
            printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058=%08X\n",sim_DPORT_APP_CACHE_CTRL_REG);
            // OLAS was 1
            return sim_DPORT_APP_CACHE_CTRL_REG;
+           break;
+
+       case 0x5C:
+           printf(" DPORT_APP_CACHE_CTRL1_REG  3ff0005C=%08X\n",sim_DPORT_APP_CACHE_CTRL1_REG);
+           return (sim_DPORT_APP_CACHE_CTRL1_REG);
            break;
 
       case 0x3F0:
@@ -1265,10 +1293,30 @@ static void esp_io_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
 
-    if ((addr>0x10000 && addr<0x11ffc) || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
+/* Flash MMU table for PRO CPU */
+//#define DPORT_PRO_FLASH_MMU_TABLE ((volatile uint32_t*) 0x3FF10000)
+
+/* Flash MMU table for APP CPU */
+//#define DPORT_APP_FLASH_MMU_TABLE ((volatile uint32_t*) 0x3FF12000)
+// (addr>0x10000 && addr<0x11ffc) ||
+
+if (addr>=0x10000 && addr<0x11ffc) {
+    pro_MMU_REG[addr-0x10000]=val;
+    if (val!=0) {
+       fprintf (stderr, "MMU %" PRIx64 "\n" ,val); 
+    }
+}
+
+if (addr>=0x12000 && addr<0x13ffc) {
+    app_MMU_REG[addr-0x12000]=val;
+}
+
+
+
+    if ( addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
      ||  (addr>=0x69440 && addr<=0x6947c) || addr==0x44008  || addr==0x4400c
     )  {
-        // Cache MMU table
+        // Cache MMU table?
     } else {
        if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
     }
@@ -1286,26 +1334,6 @@ static void esp_io_write(void *opaque, hwaddr addr,
 
                     xtensa_runstall(env,false);
                     
-                    //qemu_register_reset(lx60_reset, APPcpu);
-                    //cc->reset(env);
-                    /*
-                    env->exception_taken = 0;
-                    env->pc = env->config->exception_vector[EXC_RESET];
-                    env->sregs[LITBASE] &= ~1;
-                    env->sregs[PS] = xtensa_option_enabled(env->config,
-                                                           XTENSA_OPTION_INTERRUPT) ? 0x1f : 0x10;
-                    env->sregs[VECBASE] = env->config->vecbase;
-                    env->sregs[IBREAKENABLE] = 0;
-                    env->sregs[MEMCTL] = MEMCTL_IL0EN & env->config->memctl_mask;
-                    env->sregs[CACHEATTR] = 0x22222222;
-                    env->sregs[ATOMCTL] = xtensa_option_enabled(env->config,
-                                                                XTENSA_OPTION_ATOMCTL) ? 0x28 : 0x15;
-                    env->sregs[CONFIGID0] = env->config->configid[0];
-                    env->sregs[CONFIGID1] = env->config->configid[1];
-
-                    env->pending_irq_level = 0;
-                    */
-                    //reset_mmu(env);
                 }
             }
             break; 
@@ -1315,18 +1343,46 @@ static void esp_io_write(void *opaque, hwaddr addr,
             sim_DPORT_APPCPU_CTRL_D_REG=val;
             break;
 
+        case 0x48:
+            printf("DPORT_PRO_CACHE_LOCK_0_ADDR_REG 3ff00048\n");
+            sim_DPORT_PRO_CACHE_LOCK_0_ADDR_REG=val;
+            break;            
+
         case 0x40:
-            printf("DPORT_PRO_CACHE_CTRL_REG 3ff00040\n");
-            sim_DPORT_PRO_CACHE_CTRL_REG=val;
-           break; 
+            {
+                printf("DPORT_PRO_CACHE_CTRL_REG 3ff00040\n");
+                sim_DPORT_PRO_CACHE_CTRL_REG = val;
+
+            }
+            break; 
+
+        case 0x44:
+           {
+              printf(" DPORT_PRO_CACHE_CTRL1_REG  3ff00044  %" PRIx64 "\n" ,val);
+
+                sim_DPORT_PRO_CACHE_CTRL1_REG=val;
+           }
+           break;
+
+        case 0x10000:
+           {
+              printf(" MMU CACHE  3ff10000  %" PRIx64 "\n" ,val);
+           }
+           break;
+
+        case 0x5C:
+           printf(" DPORT_APP_CACHE_CTRL1_REG  3ff0005C=%08X\n",val);
+           sim_DPORT_APP_CACHE_CTRL1_REG=val;
+           break;
+
         case 0x58:
            printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058\n");
            sim_DPORT_APP_CACHE_CTRL_REG=val;
            break;
 
-        case 0x88:
+        case 0x5F0:
             // TODO!! CHECK IF UNUSED, Just unpatches the rom patches
-           printf(" OLAS_EMULATION_ROM_UNPATCH  3ff00088\n");
+           printf(" OLAS_EMULATION_ROM_UNPATCH  3ff005F0\n");
            {
              FILE *f_rom=fopen("rom.bin", "r");
             
@@ -1342,6 +1398,33 @@ static void esp_io_write(void *opaque, hwaddr addr,
                 fprintf(stderr,"Rom is restored.\n");
             }
            }
+
+/*
+            // Load data to partiotion to make  nvs_flash_init() happy
+            {
+                fprintf(stderr,"Flash map data to memory\n");
+                printf("Flash map data to memory\n");
+                // I dont know how this works. Guessing
+                
+                FILE *f_flash = fopen("esp32flash.bin", "r");
+
+                if (f_flash == NULL)
+                {
+                    fprintf(stderr, "   Can't open 'esp32flash.bin' for reading.\n");
+                }
+                else
+                {
+                    unsigned int *rom_data = (unsigned int *)malloc(64*0x400 * sizeof(unsigned char));
+                    if (fread(rom_data, 64*0x400 * sizeof(unsigned char), 1, f_flash) < 1)
+                    {
+                        fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt.\n");
+                    }
+                    cpu_physical_memory_write(0x3f410000, rom_data, 64*0x400 * sizeof(unsigned char));
+                    fprintf(stderr, "Flash partition data is loaded.\n");
+                }
+                
+            }
+*/
 
            break;
         case 0xcc:
