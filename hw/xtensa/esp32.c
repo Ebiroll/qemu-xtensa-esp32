@@ -1489,11 +1489,23 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
 }
 
+typedef struct Esp32WifiState {
+
+    uint32_t reg[0x10000];
+} Esp32WifiState;
+
+
+
 static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
         unsigned size)
 {
 
+    Esp32WifiState *s=opaque;
+
     printf("wifi read %" PRIx64 " \n",addr);
+
+
+    
     switch(addr) {
     case 0xe04c:
         return 0xffffffff;
@@ -1507,15 +1519,22 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
     case 0x1c018:
         //return 0;
         return 0x980020b6;
+        //return 0x80000000;
         // Some difference should land between these values
               // 0x980020c0;
               // 0x980020b0;
         //return   0x800000;
     case 0x33c00:
-        return 0x980020b6+0x980020b0;
+        //return 0x01000000;
+        {
+        static int test=0x980020b6+0x980020b0;
+        printf("%d\n",test);
+        return (test--);
+        }
         //return 0;
         //return 
     default:
+        return(s->reg[addr]);
         break;
     }
 
@@ -1526,8 +1545,11 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 static void esp_wifi_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
+    Esp32WifiState *s=opaque;
+
     printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
 
+    s->reg[addr]=val;
 }
 
 
@@ -1679,9 +1701,11 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     memory_region_add_subregion(system_memory, 0x3ff00000, system_io);
 
 
+   Esp32WifiState *s = g_malloc(sizeof(Esp32WifiState));
+
 
    wifi_io = g_malloc(sizeof(*wifi_io));
-   memory_region_init_io(wifi_io, NULL, &esp_wifi_ops, NULL, "esp32.wifi",
+   memory_region_init_io(wifi_io, NULL, &esp_wifi_ops, s, "esp32.wifi",
                               0x80000);
 
    memory_region_add_subregion(system_memory, 0x60000000, wifi_io);
