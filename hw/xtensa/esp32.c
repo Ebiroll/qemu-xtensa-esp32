@@ -1127,6 +1127,50 @@ static unsigned int pro_MMU_REG[0x2000];
 
 static unsigned int app_MMU_REG[0x2000];
 
+bool nv_init_called=false;
+
+void memdump(uint32_t mem,uint32_t len)
+{
+    unsigned int *rom_data = (unsigned int *)malloc(64*0x400 * sizeof(unsigned int));
+    cpu_physical_memory_read(mem, rom_data, 60*0x400 );
+    int q=0;
+    for(q=0;q<(64/4)*0x400;q++) 
+    {
+        printf( "%08X", rom_data[q]);
+    }
+    free(rom_data);
+}
+
+void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
+{
+        fprintf(stderr,"(qemu) Flash map  %08X to memory, %08X\n",flash_start,mem_addr);
+        printf("Flash map data to  %08X to memory, %08X\n",flash_start,mem_addr);
+        // I dont know how this works. Guessing
+        
+        FILE *f_flash = fopen("esp32flash.bin", "r");
+
+        if (f_flash == NULL)
+        {
+            fprintf(stderr, "   Can't open 'esp32flash.bin' for reading.\n");
+        }
+        else
+        {
+            unsigned int *rom_data = (unsigned int *)malloc(len);
+            fseek(f_flash,flash_start,SEEK_SET);
+            if (fread(rom_data, len, 1, f_flash) < 1)
+            {
+                fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt.\n");
+            }
+            //fprintf(stderr,"-%8X\n",mem_addr);
+            //fprintf(stderr,"->%8X\n",mem_addr+0x10000);
+
+            //memdump(mem_addr,0x4000);
+            cpu_physical_memory_write(mem_addr, rom_data, len );
+
+            fprintf(stderr, "Flash partition data is loaded.\n");
+        }        
+}
+
 
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
@@ -1134,11 +1178,24 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
     if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
     if (addr>=0x10000 && addr<0x11ffc) {
-        return(pro_MMU_REG[addr-0x10000]);
+
+        return(pro_MMU_REG[addr/4-0x10000/4]);
     }
 
     if (addr>=0x12000 && addr<0x13ffc) {
-        return(app_MMU_REG[addr-0x12000]);
+
+        if (addr==0x123fc)
+        {
+            if (nv_init_called==true) 
+            {
+                // This might not be correct but bootloader sets up this.
+                fprintf(stderr,"MMU emu %d\n",pro_MMU_REG[0]);
+                mapFlashToMem(0x4000, 0x3f404000,0x10000-0x4000);
+            }
+            nv_init_called=true;
+        }
+
+        return(app_MMU_REG[addr/4-0x12000/4]);
     }
 
 
@@ -1319,35 +1376,6 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 XtensaCPU *APPcpu = NULL;
 
 
-void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr)
-{
-                fprintf(stderr,"Flash map data to memory\n");
-                printf("Flash map data to memory\n");
-                // I dont know how this works. Guessing
-                
-                FILE *f_flash = fopen("esp32flash.bin", "r");
-
-                if (f_flash == NULL)
-                {
-                    fprintf(stderr, "   Can't open 'esp32flash.bin' for reading.\n");
-                }
-                else
-                {
-                    unsigned int *rom_data = (unsigned int *)malloc(64*0x400 * sizeof(unsigned char));
-                    fseek(f_flash,flash_start,SEEK_SET);
-                    if (fread(rom_data, 64*0x400 * sizeof(unsigned char), 1, f_flash) < 1)
-                    {
-                        fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt.\n");
-                    }
-                    //fprintf(stderr,"%8X\n",*rom_data);
-                    cpu_physical_memory_write(mem_addr, rom_data, 64*0x400 * sizeof(unsigned char));
-
-                    //cpu_physical_memory_write(0x3f410000, rom_data+flash_start, 64*0x400 * sizeof(unsigned char));
-                    fprintf(stderr, "Flash partition data is loaded.\n");
-                }
-                
-}
-// mapFlashToMem(0x8000, 0x3f720000);
 
 static void esp_io_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
@@ -1361,72 +1389,36 @@ static void esp_io_write(void *opaque, hwaddr addr,
 // (addr>0x10000 && addr<0x11ffc) ||
 
 if (addr>=0x10000 && addr<0x11ffc) {
-/*
-if (addr==0x100c8) {
+  if (addr==0x100c8) {
+    // Bootloader, loads instruction cache
     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
-                        // 0x1000
-            if (val==0) 
-            {
-               mapFlashToMem(0x0000, 0x3f720000);
-            }
-            if (val==1) 
-            {
-               mapFlashToMem(0x10000, 0x3f720000);
-            }
-            if (val==2) 
-            {
-               mapFlashToMem(0x20000, 0x3f720000);
-            }
-            if (val==3) 
-            {
-               mapFlashToMem(0x30000, 0x3f720000);
-            }
-            if (val==4) 
-            {
-               mapFlashToMem(0x40000, 0x3f720000);
-            }
-            if (val==5) 
-            {
-               mapFlashToMem(0x50000, 0x3f720000);
-            }
-            if (val==6) 
-            {
-               mapFlashToMem(0x60000, 0x3f720000);
-            }
-            if (val==7) 
-            {
-               mapFlashToMem(0x70000, 0x3f720000);
-            }
-            if (val==8) 
-            {
-               mapFlashToMem(0x80000, 0x3f720000);
-            }
-            if (val==9) 
-            {
-               mapFlashToMem(0x90000, 0x3f720000);
-            }
-            
+        mapFlashToMem(val*0x10000, 0x3f720000,0x10000);            
     }
-}
-*/
+  }
 
-if (addr==0x10000) {
-    if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
+
+  if (addr==0x10000) {
+     //if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
             // Partition table
-                      // 0x8000
+            // 0x8000
             // Try this for bootloader configuration          
             //mapFlashToMem(0, 0x3f400000);
-    }
-}
+            //if (nv_init_called) {
+                // Data is located and used at 0x3f400000  0x3f404000 ???
+                // This is not always the correct locations.
+                mapFlashToMem(0, 0x3f404000,0x10000-0x4000);
+            //}
+      //}
+   }
 
-    pro_MMU_REG[addr-0x10000]=val;
+    pro_MMU_REG[addr/4-0x10000/4]=val;
     if (val!=0) {
        fprintf (stderr, "MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 
 if (addr>=0x12000 && addr<0x13ffc) {
-    app_MMU_REG[addr-0x12000]=val;
+    app_MMU_REG[addr/4-0x12000/4]=val;
 }
 
 
@@ -1760,6 +1752,15 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     }
 
     qemu_register_reset(esp32_reset, esp32);
+
+    nv_init_called=false;
+    // Initate same as after running bootloader
+    //pro_MMU_REG[0]=2;
+    //app_MMU_REG[0]=2;
+    //pro_MMU_REG[77]=4;
+    //app_MMU_REG[77]=4;
+    //pro_MMU_REG[78]=5;
+    //app_MMU_REG[78]=5;
 
 
     // Map all as ram 
@@ -2122,8 +2123,13 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
             //cpu_physical_memory_write(0x40004e10+3, retw_n, sizeof(retw_n));
 
             // Not working so well..
-            // Patch rom,  ram_txdc_cal_v70 0x4008753b 
-            cpu_physical_memory_write(0x4008753b+3, retw_n, sizeof(retw_n));
+            // Not rom,  ram_txdc_cal_v70 0x4008753b 
+            //cpu_physical_memory_write(0x4008753b+3, retw_n, sizeof(retw_n));
+
+
+
+            //esp_phy_init, 0x400d0e2f
+            cpu_physical_memory_write(0x4000522d+3, retw_n, sizeof(retw_n));
 
 
             // This would have been nicer, however ram will be cleared by rom-functions later... 
