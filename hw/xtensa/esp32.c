@@ -601,16 +601,30 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                     int j=0;
                     for(j=0;j<16;j++) 
                     {
-                        printf( "%08X", *data);
+                        fprintf(stderr, "%08X", *data);
                         data++;
                         if (j%8==7) {
-                            printf("\n");
+                            fprintf(stderr,"\n");
                         }
                     }
 */
 
 
-       }               
+       }
+       /*
+       if (command==0x02) {
+           DEBUG_LOG("SPI_WRITE 0x02. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
+           // TODO, ignore bit 0-7 !!!
+           unsigned int silly=ESP32_SPI_GET(s, ADDR, OFFSET) >> 8;
+           DEBUG_LOG("Silly %08X\n",silly);
+
+            memcpy(s->flash_image + silly,
+                &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+                4*16);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+       }
+       */
+
     }
 }
 
@@ -670,6 +684,20 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
     };
 
     if (addr>=0x80 && addr <= 0x9c) {
+       unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+
+       if (addr==0x9c)
+       {
+         s->reg[addr / 4] = val;
+         //unsigned int *set=(uint32_t)s->flash_image + (uint32_t)silly +(uint32_t)(addr-0x80);
+         //*set=val;
+         // Memory mapped file
+         memcpy(s->flash_image + write_addr,
+            &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+            4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+       }
+
        DEBUG_LOG("SPI data 0x%08x\n",val);     
     }
 
@@ -719,6 +747,8 @@ static Esp32SpiState *esp32_spi_init(int spinum,MemoryRegion *address_space,
 
     s->flash_image=get_flashMemory();
     *flash_image=s->flash_image;
+    //int *test=(int *)s->flash_image;
+    //*test=0xdead;
 
     //memory_region_init_rom_device(&s->cache, NULL, NULL, s,
     //                              cache_name, ESP32_MAX_FLASH_SZ,
@@ -1289,6 +1319,36 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 XtensaCPU *APPcpu = NULL;
 
 
+void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr)
+{
+                fprintf(stderr,"Flash map data to memory\n");
+                printf("Flash map data to memory\n");
+                // I dont know how this works. Guessing
+                
+                FILE *f_flash = fopen("esp32flash.bin", "r");
+
+                if (f_flash == NULL)
+                {
+                    fprintf(stderr, "   Can't open 'esp32flash.bin' for reading.\n");
+                }
+                else
+                {
+                    unsigned int *rom_data = (unsigned int *)malloc(64*0x400 * sizeof(unsigned char));
+                    fseek(f_flash,flash_start,SEEK_SET);
+                    if (fread(rom_data, 64*0x400 * sizeof(unsigned char), 1, f_flash) < 1)
+                    {
+                        fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt.\n");
+                    }
+                    //fprintf(stderr,"%8X\n",*rom_data);
+                    cpu_physical_memory_write(mem_addr, rom_data, 64*0x400 * sizeof(unsigned char));
+
+                    //cpu_physical_memory_write(0x3f410000, rom_data+flash_start, 64*0x400 * sizeof(unsigned char));
+                    fprintf(stderr, "Flash partition data is loaded.\n");
+                }
+                
+}
+// mapFlashToMem(0x8000, 0x3f720000);
+
 static void esp_io_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
@@ -1301,9 +1361,67 @@ static void esp_io_write(void *opaque, hwaddr addr,
 // (addr>0x10000 && addr<0x11ffc) ||
 
 if (addr>=0x10000 && addr<0x11ffc) {
+/*
+if (addr==0x100c8) {
+    if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
+                        // 0x1000
+            if (val==0) 
+            {
+               mapFlashToMem(0x0000, 0x3f720000);
+            }
+            if (val==1) 
+            {
+               mapFlashToMem(0x10000, 0x3f720000);
+            }
+            if (val==2) 
+            {
+               mapFlashToMem(0x20000, 0x3f720000);
+            }
+            if (val==3) 
+            {
+               mapFlashToMem(0x30000, 0x3f720000);
+            }
+            if (val==4) 
+            {
+               mapFlashToMem(0x40000, 0x3f720000);
+            }
+            if (val==5) 
+            {
+               mapFlashToMem(0x50000, 0x3f720000);
+            }
+            if (val==6) 
+            {
+               mapFlashToMem(0x60000, 0x3f720000);
+            }
+            if (val==7) 
+            {
+               mapFlashToMem(0x70000, 0x3f720000);
+            }
+            if (val==8) 
+            {
+               mapFlashToMem(0x80000, 0x3f720000);
+            }
+            if (val==9) 
+            {
+               mapFlashToMem(0x90000, 0x3f720000);
+            }
+            
+    }
+}
+*/
+
+if (addr==0x10000) {
+    if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
+            // Partition table
+                      // 0x8000
+            // Try this for bootloader configuration          
+            //mapFlashToMem(0, 0x3f400000);
+    }
+}
+
     pro_MMU_REG[addr-0x10000]=val;
     if (val!=0) {
-       fprintf (stderr, "MMU %" PRIx64 "\n" ,val); 
+       fprintf (stderr, "MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 
@@ -1419,6 +1537,8 @@ if (addr>=0x12000 && addr<0x13ffc) {
                     {
                         fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt.\n");
                     }
+                    cpu_physical_memory_write(0x3f720000, rom_data, 64*0x400 * sizeof(unsigned char));
+
                     cpu_physical_memory_write(0x3f410000, rom_data, 64*0x400 * sizeof(unsigned char));
                     fprintf(stderr, "Flash partition data is loaded.\n");
                 }
@@ -2003,7 +2123,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
             // Not working so well..
             // Patch rom,  ram_txdc_cal_v70 0x4008753b 
-            //cpu_physical_memory_write(0x4008753b+3, retw_n, sizeof(retw_n));
+            cpu_physical_memory_write(0x4008753b+3, retw_n, sizeof(retw_n));
 
 
             // This would have been nicer, however ram will be cleared by rom-functions later... 
