@@ -1401,15 +1401,25 @@ if (addr>=0x10000 && addr<0x11ffc) {
      //if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
             // Partition table
             // 0x8000
-            // Try this for bootloader configuration          
-            //mapFlashToMem(0, 0x3f400000);
-            //if (nv_init_called) {
+            // Try ignoring  nv_init_called when testing bootloader         
+            if (nv_init_called) {
                 // Data is located and used at 0x3f400000  0x3f404000 ???
                 // This is not always the correct locations.
-                mapFlashToMem(0, 0x3f404000,0x10000-0x4000);
-            //}
+                mapFlashToMem(val*0x10000, 0x3f404000,0x10000-0x4000);
+            }
       //}
    }
+   if (nv_init_called) {
+        if (addr==0x10004) {
+                mapFlashToMem(val*0x10000, 0x3f410000,0x10000);
+        }
+        if (addr==0x10008) {
+                mapFlashToMem(val*0x10000, 0x3f420000,0x10000);
+        }
+   }
+
+
+
 
     pro_MMU_REG[addr/4-0x10000/4]=val;
     if (val!=0) {
