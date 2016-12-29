@@ -1167,7 +1167,7 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
             //memdump(mem_addr,0x4000);
             cpu_physical_memory_write(mem_addr, rom_data, len );
 
-            fprintf(stderr, "Flash partition data is loaded.\n");
+            fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
         }        
 }
 
