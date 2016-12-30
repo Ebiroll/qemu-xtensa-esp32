@@ -196,6 +196,8 @@ static uint64_t esp32_serial_read(void *opaque, hwaddr addr,
 {
     Esp32SerialState *s = opaque;
 
+    DEBUG_LOG("%s: +0x%02x: ", __func__, (uint32_t)addr);
+
     if ((addr & 3) || size != 4) {
         return 0;
     }
@@ -306,6 +308,9 @@ static void esp32_serial_write(void *opaque, hwaddr addr,
                                  uint64_t val, unsigned size)
 {
     Esp32SerialState *s = opaque;
+
+    DEBUG_LOG("%s: +0x%02x: ", __func__, (uint32_t)addr);
+
     static void (* const handler[])(Esp32SerialState *s, hwaddr addr,
                                     uint64_t val, unsigned size) = {
         [ESP32_UART_FIFO] = esp32_serial_tx,
@@ -1851,14 +1856,22 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
                       , nd_table);   //   xtensa_get_extint(env, 9)
     } 
 
+    env = (CPUXtensaState *) &esp32->cpu[0]->env;
 
-    //if (!serial_hds[0]) {
-    //    printf("New serial device\n");
-    //    serial_hds[0] = qemu_chr_new("serial0", "null",NULL);
-    //}
+
+    if (!serial_hds[0]) {
+        printf("New serial device\n");
+        serial_hds[0] = qemu_chr_new("serial0", "null",NULL);
+    }
 
     //esp32_serial_init(system_io, 0x40000, "esp32.uart0",
     //                    xtensa_get_extint(env, 5), serial_hds[0]);
+
+
+    esp32_serial_init(system_io, 0x6e000, "esp32.uart0",
+                        xtensa_get_extint(env, 5), serial_hds[0]);
+
+
 
     //printf("No call to serial__mm_init\n");
 
