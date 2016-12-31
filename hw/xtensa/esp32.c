@@ -105,7 +105,7 @@ enum {
     ESP32_UART_INT_CLR,
     ESP32_UART_CLKDIV,
     ESP32_UART_AUTOBAUD,
-    ESP32_UART_STATUS,
+    ESP32_UART_STATUS,    //  ESP32_UART_txfifo_cnt = 0x1c/4,
     ESP32_UART_CONF0,
     ESP32_UART_CONF1,
     ESP32_UART_LOWPULSE,
@@ -158,11 +158,13 @@ static unsigned esp32_serial_rx_fifo_size(Esp32SerialState *s)
     return (s->rx_last - s->rx_first) & ESP32_UART_FIFO_MASK;
 }
 
-static int esp32_serial_can_receive(void *opaque)
+static bool esp32_serial_can_receive(void *opaque)
 {
     Esp32SerialState *s = opaque;
+    if (esp32_serial_rx_fifo_size(s) > (ESP32_UART_FIFO_SIZE - 1))
+      pfintf("FULL\n");
 
-    return esp32_serial_rx_fifo_size(s) != ESP32_UART_FIFO_SIZE - 1;
+    return esp32_serial_rx_fifo_size(s) < (ESP32_UART_FIFO_SIZE - 1);
 }
 
 static void esp32_serial_irq_update(Esp32SerialState *s)
@@ -196,19 +198,21 @@ static uint64_t esp32_serial_read(void *opaque, hwaddr addr,
 {
     Esp32SerialState *s = opaque;
 
-    DEBUG_LOG("%s: +0x%02x: ", __func__, (uint32_t)addr);
+    DEBUG_LOG("%s: +0x%02x: \n", __func__, (uint32_t)addr);
 
-    if ((addr & 3) || size != 4) {
-        return 0;
-    }
+    //if ((addr & 3) || size != 4) {
+    //    return 0;
+    //}
 
     switch (addr / 4) {
     case ESP32_UART_STATUS:
         return esp32_serial_rx_fifo_size(s);
 
     case ESP32_UART_FIFO:
+        printf(stderr,"%d\n",esp32_serial_rx_fifo_size(s));
         if (esp32_serial_rx_fifo_size(s)) {
             uint8_t r = s->rx[s->rx_first++];
+            printf(stderr,"%c\n",r);
 
             s->rx_first &= ESP32_UART_FIFO_MASK;
             esp32_serial_rx_irq_update(s);
@@ -243,6 +247,7 @@ static void esp32_serial_receive(void *opaque, const uint8_t *buf, int size)
 {
     Esp32SerialState *s = opaque;
     unsigned i;
+    //fprintf(stderr,"UART socket received %s\n",buf);
 
     for (i = 0; i < size && esp32_serial_can_receive(s); ++i) {
         s->rx[s->rx_last++] = buf[i];
@@ -260,6 +265,8 @@ static void esp32_serial_ro(Esp32SerialState *s, hwaddr addr,
 static void esp32_serial_tx(Esp32SerialState *s, hwaddr addr,
                               uint64_t val, unsigned size)
 {
+    DEBUG_LOG("FIFO: %c \n",(char)val);
+
     if (ESP32_UART_GET(s, CONF0, LOOPBACK)) {
         if (esp32_serial_can_receive(s)) {
             uint8_t buf[] = { (uint8_t)val };
@@ -267,7 +274,7 @@ static void esp32_serial_tx(Esp32SerialState *s, hwaddr addr,
             esp32_serial_receive(s, buf, 1);
         }
 
-    } else if (s->chr) {
+    } else if (true /*s->chr*/) {
         uint8_t buf[1] = { val };
         qemu_chr_fe_write(s->chr, buf, 1);
         fprintf(stderr,"%c",(char)val);
@@ -309,7 +316,7 @@ static void esp32_serial_write(void *opaque, hwaddr addr,
 {
     Esp32SerialState *s = opaque;
 
-    DEBUG_LOG("%s: +0x%02x: ", __func__, (uint32_t)addr);
+    DEBUG_LOG("%s: +0x%02x:  \n", __func__, (uint32_t)addr);
 
     static void (* const handler[])(Esp32SerialState *s, hwaddr addr,
                                     uint64_t val, unsigned size) = {
@@ -781,7 +788,7 @@ Esp32SerialState *gdb_serial=NULL;
 Esp32SerialState *esp32_serial_init(MemoryRegion *address_space,
                                                hwaddr base, const char *name,
                                                qemu_irq irq,
-                                    CharDriverState *chr);
+                                               CharDriverState *chr);
 
 Esp32SerialState *esp32_serial_init(MemoryRegion *address_space,
                                                hwaddr base, const char *name,
@@ -792,8 +799,8 @@ Esp32SerialState *esp32_serial_init(MemoryRegion *address_space,
 
     s->chr = chr;
     s->irq = irq;
-    qemu_chr_add_handlers(s->chr, esp32_serial_can_receive,
-                          esp32_serial_receive, NULL, s);
+    //qemu_chr_add_handlers(s->chr, esp32_serial_can_receive,
+    //                      esp32_serial_receive, NULL, s);
     memory_region_init_io(&s->iomem, NULL, &esp32_serial_ops, s,
                           name, 0x100);
     memory_region_add_subregion(address_space, base, &s->iomem);
@@ -814,7 +821,7 @@ void *connection_handler(void *socket_desc)
 
     gdb_serial_connected=true;
      
-    printf("Started gdb socket\n");
+    printf("Started uart socket\n");
 
     //struct timeval tv;
     //tv.tv_sec = 0;  /* 30 Secs Timeout */
@@ -843,7 +850,7 @@ void *connection_handler(void *socket_desc)
                 // Timeout 
                 break;
             default:
-                read_size = recv(sock , client_message , 1 , 0);
+                read_size = recv(sock , client_message , 512 , 0);
                 break;
         }
 
@@ -856,7 +863,7 @@ void *connection_handler(void *socket_desc)
 
         int to_send=gdb_serial_buff_tx-gdb_serial_buff_rd;
         if (gdb_serial_buff_rd<gdb_serial_buff_tx) {
-                //printf("%s",&gdb_serial_buff[gdb_serial_buff_rd]);
+                fprintf(stderr,"%s",&gdb_serial_buff[gdb_serial_buff_rd]);
                 int pos=gdb_serial_buff_rd;
                 while(pos<gdb_serial_buff_tx) {
                     printf("%c",gdb_serial_buff[pos%MAX_GDB_BUFF]);
@@ -1180,6 +1187,8 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
 static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
 {
+
+
     if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
     if (addr>=0x10000 && addr<0x11ffc) {
@@ -1392,6 +1401,13 @@ static void esp_io_write(void *opaque, hwaddr addr,
 /* Flash MMU table for APP CPU */
 //#define DPORT_APP_FLASH_MMU_TABLE ((volatile uint32_t*) 0x3FF12000)
 // (addr>0x10000 && addr<0x11ffc) ||
+
+if ((addr==0x60054) ||
+    (addr==0x60050) ||
+    (addr==0x60060) ||
+(addr==0x60064)) {
+    return;
+}
 
 if (addr>=0x10000 && addr<0x11ffc) {
   if (addr==0x100c8) {
@@ -1868,8 +1884,9 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //                    xtensa_get_extint(env, 5), serial_hds[0]);
 
 
-    esp32_serial_init(system_io, 0x6e000, "esp32.uart0",
-                        xtensa_get_extint(env, 5), serial_hds[0]);
+    //  xtensa_get_extint(env, 5)
+    esp32_serial_init(system_io, 0x6e000, "esp32.uart2",
+                        esp32->cpu[0]->env.irq_inputs[5], serial_hds[0]);
 
 
 
