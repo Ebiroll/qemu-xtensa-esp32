@@ -77,12 +77,15 @@ typedef struct Esp32 {
     XtensaCPU *cpu[2];
 } Esp32;
 
+bool dummy=false;
 
-bool gdb_serial_connected=false;
 #define MAX_GDB_BUFF  2*4096
 char gdb_serial_buff[MAX_GDB_BUFF];
 int  gdb_serial_buff_rd=0;
 int  gdb_serial_buff_tx=0;
+bool gdb_serial_connected=false;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 void *connection_handler(void *socket_desc);
 void *gdb_socket_thread(void *dummy);
@@ -162,7 +165,9 @@ static bool esp32_serial_can_receive(void *opaque)
 {
     Esp32SerialState *s = opaque;
     if (esp32_serial_rx_fifo_size(s) > (ESP32_UART_FIFO_SIZE - 1))
-      pfintf("FULL\n");
+      fprintf(stderr,"FULL\n");
+
+    //fprintf(stderr,"FIFO SIZE %d\n",esp32_serial_rx_fifo_size(s));
 
     return esp32_serial_rx_fifo_size(s) < (ESP32_UART_FIFO_SIZE - 1);
 }
@@ -170,7 +175,10 @@ static bool esp32_serial_can_receive(void *opaque)
 static void esp32_serial_irq_update(Esp32SerialState *s)
 {
     s->reg[ESP32_UART_INT_ST] |= s->reg[ESP32_UART_INT_RAW];
+    //fprintf(stderr,"CHECKING IRQ\n");
+
     if (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA]) {
+        fprintf(stderr,"RAISING IRQ\n");
         qemu_irq_raise(s->irq);
     } else {
         qemu_irq_lower(s->irq);
@@ -209,10 +217,10 @@ static uint64_t esp32_serial_read(void *opaque, hwaddr addr,
         return esp32_serial_rx_fifo_size(s);
 
     case ESP32_UART_FIFO:
-        printf(stderr,"%d\n",esp32_serial_rx_fifo_size(s));
+        //fprintf(stderr,"siz %u\n",esp32_serial_rx_fifo_size(s));
         if (esp32_serial_rx_fifo_size(s)) {
             uint8_t r = s->rx[s->rx_first++];
-            printf(stderr,"%c\n",r);
+            //fprintf(stderr,"%c\n",(char)r);
 
             s->rx_first &= ESP32_UART_FIFO_MASK;
             esp32_serial_rx_irq_update(s);
@@ -247,7 +255,7 @@ static void esp32_serial_receive(void *opaque, const uint8_t *buf, int size)
 {
     Esp32SerialState *s = opaque;
     unsigned i;
-    //fprintf(stderr,"UART socket received %s\n",buf);
+    fprintf(stderr,"UART socket received %s,%d first%d last%d\n",buf,size,s->rx_first,s->rx_last);
 
     for (i = 0; i < size && esp32_serial_can_receive(s); ++i) {
         s->rx[s->rx_last++] = buf[i];
@@ -279,7 +287,10 @@ static void esp32_serial_tx(Esp32SerialState *s, hwaddr addr,
         qemu_chr_fe_write(s->chr, buf, 1);
         fprintf(stderr,"%c",(char)val);
         if (gdb_serial_connected) {
-            gdb_serial_buff[gdb_serial_buff_tx++%MAX_GDB_BUFF]=(char)val;
+            pthread_mutex_lock(&mutex);
+            gdb_serial_buff[gdb_serial_buff_tx%MAX_GDB_BUFF]=(char)val;
+            gdb_serial_buff_tx++;
+            pthread_mutex_unlock(&mutex);
         }
 
         s->reg[ESP32_UART_INT_RAW] |= ESP32_UART_INT_TXFIFO_EMPTY;
@@ -783,7 +794,7 @@ spi = esp32_spi_init(system_io, 0x0000100, "esp32.spi0",
 
 */
 
-Esp32SerialState *gdb_serial=NULL;
+Esp32SerialState *gdb_serial[3]={0};
 
 Esp32SerialState *esp32_serial_init(MemoryRegion *address_space,
                                                hwaddr base, const char *name,
@@ -805,7 +816,7 @@ Esp32SerialState *esp32_serial_init(MemoryRegion *address_space,
                           name, 0x100);
     memory_region_add_subregion(address_space, base, &s->iomem);
     qemu_register_reset(esp32_serial_reset, s);
-    gdb_serial=s;
+    s->rx_last=s->rx_first=0;
     return s;
 }
 
@@ -821,7 +832,7 @@ void *connection_handler(void *socket_desc)
 
     gdb_serial_connected=true;
      
-    printf("Started uart socket\n");
+    fprintf(stderr,"Started uart socket\n");
 
     //struct timeval tv;
     //tv.tv_sec = 0;  /* 30 Secs Timeout */
@@ -831,8 +842,12 @@ void *connection_handler(void *socket_desc)
     //message = "$T08\n";
     //write(sock , message , strlen(message));
 
+    pthread_mutex_lock(&mutex);
+    gdb_serial_buff_rd=gdb_serial_buff_tx=0;
+    pthread_mutex_unlock(&mutex);
 
     //Receive a message from client
+    bool socket_ok=true;
     do 
     {
         struct pollfd fd;
@@ -854,41 +869,69 @@ void *connection_handler(void *socket_desc)
                 break;
         }
 
-        if (gdb_serial) {
+        if (gdb_serial[0]) {
             if (read_size>0)  {
-                esp32_serial_receive(gdb_serial,(unsigned char *)client_message,read_size);
+                esp32_serial_receive(gdb_serial[0],(unsigned char *)client_message,read_size);
                 printf("%s",client_message);
             }
         }
 
+        if (gdb_serial[1]) {
+            if (read_size>0)  {
+                esp32_serial_receive(gdb_serial[1],(unsigned char *)client_message,read_size);
+                printf("%s",client_message);
+            }
+        }
+
+
+        if (gdb_serial[2]) {
+            if (read_size>0)  {
+                esp32_serial_receive(gdb_serial[2],(unsigned char *)client_message,read_size);
+                printf("%s",client_message);
+            }
+        }
+
+        pthread_mutex_lock(&mutex);
         int to_send=gdb_serial_buff_tx-gdb_serial_buff_rd;
+        //if (gdb_serial_buff_tx!=gdb_serial_buff_rd) fprintf(stderr,"%d %d %d\n",gdb_serial_buff_tx,gdb_serial_buff_rd,to_send);
+
+        //char *testme="TEST ME\n";
+        //int test=write(sock ,testme , 8);
+
         if (gdb_serial_buff_rd<gdb_serial_buff_tx) {
-                fprintf(stderr,"%s",&gdb_serial_buff[gdb_serial_buff_rd]);
+                /*
+                gdb_serial_buff[gdb_serial_buff_tx]=0;
+                //fprintf(stderr,"->%s<-",&gdb_serial_buff[gdb_serial_buff_rd]);
                 int pos=gdb_serial_buff_rd;
                 while(pos<gdb_serial_buff_tx) {
-                    printf("%c",gdb_serial_buff[pos%MAX_GDB_BUFF]);
+                    //fprintf(stderr,"%c",gdb_serial_buff[pos%MAX_GDB_BUFF]);
                     if (gdb_serial_buff[pos%MAX_GDB_BUFF]=='+')
                     {
-                        printf("\n");
+                        //fprintf(stderr,"\n");
                     }
                     pos++;
                 }
+                */
                 if (gdb_serial_buff_rd + to_send<MAX_GDB_BUFF)
                 {
-                       int test=write(sock , &gdb_serial_buff[gdb_serial_buff_rd] , to_send);
-                       if (test!=to_send) { printf("send failed\n"); };
+                       char *data=&gdb_serial_buff[gdb_serial_buff_rd];
+                       int test=write(sock , data , to_send);
+                       if (test!=to_send) { fprintf(stderr,"send failed 1\n"); socket_ok=false;};
                        gdb_serial_buff_rd+=to_send;
                 }
                 else 
                 {
                     while(gdb_serial_buff_rd<gdb_serial_buff_tx) {
                        int test=write(sock , &gdb_serial_buff[(gdb_serial_buff_rd++)%MAX_GDB_BUFF] , 1);
-                       if (test!=1) { printf("send failed\n"); };
+                       if (test!=1) { fprintf(stderr,"send failed 2\n"); socket_ok=false;};
+                       gdb_serial_buff_rd+=1;
                     }
                 }
         }
+        pthread_mutex_unlock(&mutex);
 
-    } while (true);
+
+    } while (socket_ok);
      
     if(read_size == 0)
     {
@@ -900,6 +943,9 @@ void *connection_handler(void *socket_desc)
         perror("recv failed");
     }
          
+    gdb_serial_connected=false;
+
+
     //Free the socket pointer
     free(socket_desc);
      
@@ -1650,6 +1696,12 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 
     
     switch(addr) {
+    case 0x0:
+        printf("0x0000000000000000\n");
+        break;
+    case 0x10000:
+        printf("0x10000 UART 1 AHB FIFO ???\n");
+        break;
     case 0xe04c:
         return 0xffffffff;
         break;
@@ -1690,7 +1742,34 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
 {
     Esp32WifiState *s=opaque;
 
-    printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+    pthread_mutex_lock(&mutex);
+
+    if (addr==0x0) {
+        // FIFO UART NUM 0 --  UART_FIFO_AHB_REG
+        if (gdb_serial_connected) {
+            gdb_serial_buff[gdb_serial_buff_tx%MAX_GDB_BUFF]=(char)val;
+            gdb_serial_buff_tx++;
+        }
+        fprintf(stderr,"%c",val);
+    } else if (addr==0x10000) {
+        // FIFO UART NUM 1 --  UART_FIFO_AHB_REG
+        if (gdb_serial_connected) {
+            gdb_serial_buff[gdb_serial_buff_tx%MAX_GDB_BUFF]=(char)val;
+            gdb_serial_buff_tx++;
+        }
+
+        fprintf(stderr,"%c",val);
+    } else if (addr==0x2e000) {
+        // FIFO UART NUM 2  -- UART_FIFO_AHB_REG
+        if (gdb_serial_connected) {
+            gdb_serial_buff[gdb_serial_buff_tx%MAX_GDB_BUFF]=(char)val;
+            gdb_serial_buff_tx++;
+        }
+        fprintf(stderr,"%c",val);
+    } else {
+        printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+    }
+    pthread_mutex_unlock(&mutex);
 
     s->reg[addr]=val;
 }
@@ -1885,8 +1964,21 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
 
     //  xtensa_get_extint(env, 5)
-    esp32_serial_init(system_io, 0x6e000, "esp32.uart2",
-                        esp32->cpu[0]->env.irq_inputs[5], serial_hds[0]);
+
+    gdb_serial[0]=esp32_serial_init(system_io, 0x40000, "esp32.uart0",
+                        esp32->cpu[0]->env.irq_inputs[0], serial_hds[0]);
+
+
+    gdb_serial[1]=esp32_serial_init(system_io, 0x50000, "esp32.uart1",
+                        esp32->cpu[0]->env.irq_inputs[1], serial_hds[0]);
+
+     
+    // CHECK app.elf  with p _xt_interrupt_table to see what interrupts that are used
+    // b xt_set_interrupt_handler   UART2 has interrupt soucre 36??
+    // b esp_intr_alloc_intrstatus
+
+    gdb_serial[2]=esp32_serial_init(system_io, 0x6e000, "esp32.uart2",
+                          env->irq_inputs[2], serial_hds[0]);
 
 
 
