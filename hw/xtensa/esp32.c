@@ -1423,6 +1423,16 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x01;
            break;
 
+       case 0x53060:
+           printf("I2C command done 3ff53060=ffffffff\n");
+           return 0xffffffff;
+           break;
+
+       case 0x53008:
+           printf("I2C status reg 3ff53008=ffffffff\n");
+           return 0xffffffff;
+           break;
+
        case 0x5a018:
            printf("EFUSE_BLK0_RDATA6_REG 3ff5a018=01\n");
            return 0x01;
