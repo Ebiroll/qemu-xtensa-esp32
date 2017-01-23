@@ -1232,7 +1232,7 @@ void memdump(uint32_t mem,uint32_t len)
 
 void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
 {
-        fprintf(stderr,"(qemu) Flash map  %08X to memory, %08X\n",flash_start,mem_addr);
+        fprintf(stderr,"(qemu)  %08X to memory, %08X\n",flash_start,mem_addr);
         printf("Flash map data to  %08X to memory, %08X\n",flash_start,mem_addr);
         // I dont know how this works. Guessing
         
@@ -1280,8 +1280,8 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
             if (nv_init_called==true) 
             {
                 // This might not be correct but bootloader sets up this.
-                fprintf(stderr,"MMU emu %d\n",pro_MMU_REG[0]);
-                mapFlashToMem(0x4000, 0x3f404000,0x10000-0x4000);
+                //fprintf(stderr,"MMU emu %d\n",pro_MMU_REG[0]);
+                //mapFlashToMem(0x4000, 0x3f404000,0x10000-0x4000);
             }
             nv_init_called=true;
         }
@@ -1492,7 +1492,7 @@ static void esp_io_write(void *opaque, hwaddr addr,
 if ((addr==0x60054) ||
     (addr==0x60050) ||
     (addr==0x60060) ||
-(addr==0x60064)) {
+    (addr==0x60064)) {
     return;
 }
 
@@ -1505,17 +1505,30 @@ if (addr>=0x10000 && addr<0x11ffc) {
   }
 
 
+  if (addr==0x10134 || addr==0x10138|| addr==0x1013c || addr==0x10140) {
+    // Bootloader, loads instruction cache
+    if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
+        // TO TEST BOOTLOADER UNCOMMENT THIS ---->
+        //mapFlashToMem(val*0x10000, 0x400d0000+(val-5)*0x10000,0x10000);            
+    }
+  }
+
+
   if (addr==0x10000) {
-     //if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
+     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
             // Partition table
             // 0x8000
             // Try ignoring  nv_init_called when testing bootloader         
-            if (nv_init_called) {
+            //if (nv_init_called) {
                 // Data is located and used at 0x3f400000  0x3f404000 ???
-                // This is not always the correct locations.
-                mapFlashToMem(val*0x10000, 0x3f404000,0x10000-0x4000);
-            }
-      //}
+                // Try this for bootloader
+                // TO TEST BOOTLOADER UNCOMMENT THIS ---->
+                // mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
+                // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000 
+                //mapFlashToMem(0x5000, 0x3f405000,0x10000-0x5000); 
+
+            //}
+      }
    }
    if (nv_init_called) {
         if (addr==0x10004) {
@@ -1848,7 +1861,7 @@ rom_i2c_reg block 0x67 reg 0x6 57
 
     if (s->i2c_block==0x62) {
         if (addr==0xe004) {
-            static unsigned char guess=0x02;
+            static unsigned char guess=0x00;
 
             //fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
             
@@ -1860,11 +1873,12 @@ rom_i2c_reg block 0x67 reg 0x6 57
                 case 4: return 0xb4;
                 case 5: return 0x00;
                 case 6: return 0x02;
-                case 7: return guess++;
-                case 8: return 0x00;
+                case 7: return guess;
+/*              case 8: return 0x00;
                 case 9: return 0x07;
                 case 10: return 0xb0;
                 case 11: return 0x08;
+*/
                 default: return 0xff;
             }
         }
@@ -2059,12 +2073,12 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     nv_init_called=false;
     // Initate same as after running bootloader
-    //pro_MMU_REG[0]=2;
-    //app_MMU_REG[0]=2;
-    //pro_MMU_REG[77]=4;
-    //app_MMU_REG[77]=4;
-    //pro_MMU_REG[78]=5;
-    //app_MMU_REG[78]=5;
+    pro_MMU_REG[4]=100;
+    app_MMU_REG[4]=100;
+    pro_MMU_REG[77]=4;
+    app_MMU_REG[77]=4;
+    pro_MMU_REG[78]=5;
+    app_MMU_REG[78]=5;
 
 
     // Map all as ram 
