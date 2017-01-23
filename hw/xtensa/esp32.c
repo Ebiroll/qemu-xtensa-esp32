@@ -1523,13 +1523,14 @@ if (addr>=0x10000 && addr<0x11ffc) {
                 // Data is located and used at 0x3f400000  0x3f404000 ???
                 // Try this for bootloader
                 // TO TEST BOOTLOADER UNCOMMENT THIS ---->
-                // mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
+                //mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
                 // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000 
                 //mapFlashToMem(0x5000, 0x3f405000,0x10000-0x5000); 
 
             //}
       }
    }
+   // TO TEST BOOTLOADER comment test for nv_init_called ---->
    if (nv_init_called) {
         if (addr==0x10004) {
                 mapFlashToMem(val*0x10000, 0x3f410000,0x10000);
