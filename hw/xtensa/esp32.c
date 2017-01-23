@@ -1722,6 +1722,8 @@ if (addr>=0x12000 && addr<0x13ffc) {
 typedef struct Esp32WifiState {
 
     uint32_t reg[0x10000];
+    int i2c_block;
+    int i2c_reg;
 } Esp32WifiState;
 
 
@@ -1776,8 +1778,98 @@ wifi read e004
     calibration_data=0x3ffb79e8) at /home/olas/esp/esp-idf/components/esp32/./phy_init.c:50
 #7  0x400d0e43 in do_phy_init () at /home/olas/esp/esp-idf/components/esp32/./cpu_start.c:295
 
+
+rom_i2c_reg block 0x62 reg 0x6 02
+bf
+4f
+88
+77
+b4
+00
+02
+00
+00
+07
+b0
+08
+00
+00
+00
+00
+rom_i2c_reg block 0x67 reg 0x6 57
+00
+b5
+bf
+41
+43
+55
+57
+55
+57
+71
+10
+71
+10
+00
+ea
+ec
 */
-    
+
+
+/*    
+rom_i2c_reg block 0x67 reg 0x6 57
+*/
+    if (s->i2c_block==0x67) {
+        if (addr==0xe004) {
+            //fprintf(stderr,"(qemu ret) internal i2c block 0x67 %02x\n",s->i2c_reg );            
+            switch (s->i2c_reg) {
+                case 0: return 0x00;
+                case 1: return 0xb5;
+                case 2: return 0xbf;
+                case 3: return 0x41;
+                case 4: return 0x43;
+                case 5: return 0x55;
+                case 6: return 0x57;
+                case 7: return 0x55;
+                case 8: return 0x57;
+                case 9: return 0x71;
+                case 10: return 0x10;
+                case 11: return 0x71;
+                case 12: return 0x10;
+                case 13: return 0x00;
+                case 14: return 0xea;
+                case 15: return 0xec;   
+                default: return 0xff;
+            }
+        }
+    }
+
+
+
+    if (s->i2c_block==0x62) {
+        if (addr==0xe004) {
+            static unsigned char guess=0x02;
+
+            //fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
+            
+            switch (s->i2c_reg) {
+                case 0: return 0xbf;
+                case 1: return 0x4f;
+                case 2: return 0x88;
+                case 3: return 0x77;
+                case 4: return 0xb4;
+                case 5: return 0x00;
+                case 6: return 0x02;
+                case 7: return guess++;
+                case 8: return 0x00;
+                case 9: return 0x07;
+                case 10: return 0xb0;
+                case 11: return 0x08;
+                default: return 0xff;
+            }
+        }
+    }
+
     switch(addr) {
     case 0x0:
         printf("0x0000000000000000\n");
@@ -1832,6 +1924,16 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
     Esp32WifiState *s=opaque;
 
     pthread_mutex_lock(&mutex);
+
+    if (addr==0xe004) {
+      s->i2c_block= val & 0xff;
+      s->i2c_reg= (val>>8) & 0xff;
+      if (s->i2c_block!=0x62 && s->i2c_block!=0x67) 
+      {
+         fprintf(stderr,"(qemu) internal i2c %02x %d\n",s->i2c_block,s->i2c_reg );
+      }
+    }
+
 
     if (addr==0x0) {
         // FIFO UART NUM 0 --  UART_FIFO_AHB_REG
