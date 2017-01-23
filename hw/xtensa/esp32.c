@@ -1724,11 +1724,56 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 
     printf("wifi read %" PRIx64 " \n",addr);
 
+    // e004   rom i2c 
+    // e044   rom i2c
+/*
+    uint8_t rom_i2c_readReg(uint8_t block, uint8_t host_id, uint8_t reg_add);
+    uint8_t rom_i2c_readReg_Mask(uint8_t block, uint8_t host_id, uint8_t reg_add, uint8_t msb, uint8_t lsb);
+    void rom_i2c_writeReg(uint8_t block, uint8_t host_id, uint8_t reg_add, uint8_t pData);
+    void rom_i2c_writeReg_Mask(uint8_t block, uint8_t host_id, uint8_t reg_add, uint8_t msb, uint8_t lsb, uint8_t indata);
+stack 0x3ffe3cc0,
+p/x $a2-7
+0x62,0x01,0x06,  0x03,0x00, -256 (0xffffff00)
 
+#0  0x400041c3 in rom_i2c_readReg_Mask ()
+
+(gdb) p/x $a2
+$35 = 0x62
+(gdb) p/x $a3
+$36 = 0x1
+(gdb) p/x $a4
+$37 = 0x6
+
+wifi read e044 
+wifi write e044,fffff0ff 
+wifi read e044 
+wifi write e044,fffff7ff 
+wifi read e004 
+wifi write e004,662 
+wifi read e004 
+wifi read e004 
+
+
+#-1 #0  0x40004148 in rom_i2c_readReg ()
+#0  0x400041c3 in rom_i2c_readReg_Mask ()
+#1  0x40085b3c in get_rf_freq_cap (freq=<optimized out>, freq_offset=0, x_reg=<optimized out>,
+    cap_array=0x3ffe3d0f "") at phy_chip_v7_ana.c:810
+#2  0x40085cd9 in get_rf_freq_init () at phy_chip_v7_ana.c:900
+#3  0x40086aae in set_chan_freq_hw_init (tx_freq_offset=2 '\002', rx_freq_offset=4 '\004') at phy_chip_v7_ana.c:1492
+#4  0x40086d01 in rf_init () at phy_chip_v7_ana.c:795
+#5  0x40089b6a in register_chipv7_phy (init_param=<optimized out>, rf_cal_data=0x3ffb79e8 "", rf_cal_level=2 '\002')
+#6  0x400d13f0 in esp_phy_init (init_data=0x3f401828 <phy_init_data>, mode=PHY_RF_CAL_FULL,
+    calibration_data=0x3ffb79e8) at /home/olas/esp/esp-idf/components/esp32/./phy_init.c:50
+#7  0x400d0e43 in do_phy_init () at /home/olas/esp/esp-idf/components/esp32/./cpu_start.c:295
+
+*/
     
     switch(addr) {
     case 0x0:
         printf("0x0000000000000000\n");
+        break;
+    case 0x40:
+        return 0x00A40100;
         break;
     case 0x10000:
         printf("0x10000 UART 1 AHB FIFO ???\n");
@@ -1744,18 +1789,21 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
         break;
     case 0x1c018:
         //return 0;
-        return 0x980020b6;
+        return 0x11E15054;
         //return 0x80000000;
         // Some difference should land between these values
               // 0x980020c0;
               // 0x980020b0;
         //return   0x800000;
+        break;
     case 0x33c00:
+        return 0x0002BBED;
+        break;
         //return 0x01000000;
         {
-        static int test=0x980020b6+0x980020b0;
-        printf("%d\n",test);
-        return (test--);
+         //static int test=0x0002BBED;
+         //printf("(qemu) %d\n",test);
+         //return (test--);
         }
         //return 0;
         //return 
