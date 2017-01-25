@@ -1282,7 +1282,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         if (addr==0x123fc)
         {
             // Bootlader already did this, it should be safe to map this, app expects it
-            mapFlashToMem(0x7000, 0x3f407000,0x10000-0x7000);
+            mapFlashToMem(0x8000, 0x3f408000,0x10000-0x8000);
             nv_init_called=true;
         }
 
@@ -1328,6 +1328,10 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return (sim_DPORT_APP_CACHE_CTRL1_REG);
            break;
 
+      case 0x5F0:
+            // This can be used to test if we are running qemu or actual hardware
+            printf("(qemu) QEMU_TEST_REGISTER\n");
+            return(0x42);
       case 0x3F0:
            printf(" DPORT_PRO_DCACHE_DBUG0_REG  3ff003F0=0x80\n");
            return 0x80;
@@ -1538,7 +1542,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
                 //mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
                 // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000 
                 if (val!=0x100) {
-                //    mapFlashToMem(val*0x10000 + 0x6000, 0x3f406000,0x10000-0x6000); 
+                    mapFlashToMem(val*0x10000 + 0x7000, 0x3f407000,0x10000-0x7000); 
                 }
             }
       }
