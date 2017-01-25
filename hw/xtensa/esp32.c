@@ -730,6 +730,21 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
     if (addr>=0x80 && addr <= 0x9c) {
        unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
 
+#if 0
+       int offset=(addr-0x80);
+       unsigned int *data_ptr=(unsigned int *)((unsigned int)s->flash_image + (unsigned int )write_addr/4 + (unsigned int )offset/4);
+       int to_switch=offset%4;
+       if (data_ptr>=s->flash_image && data_ptr<=(s->flash_image+4000000)) {
+           unsigned char  original[4];
+           original[0] = *data_ptr >> 24 & 0xff;
+           original[1] = *data_ptr >> 16 & 0xff;
+           original[2] = *data_ptr >> 8 & 0xff;
+           original[3] = *data_ptr >> 0 & 0xff;
+           original[to_switch]= val;
+           *data_ptr = (original[0] << 24  | original[1] << 16  |  original[2] << 8 |  original[3] << 0 );  
+       }
+#endif    
+
        if (addr==0x9c)
        {
          s->reg[addr / 4] = val;
@@ -742,6 +757,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
 
        }
 
+       
        //DEBUG_LOG("SPI data 0x%08x\n",val);     
     }
 
@@ -1186,7 +1202,6 @@ static void esp32_reset(void *opaque)
 
       env->ccompare_timer =
        timer_new_ns(QEMU_CLOCK_VIRTUAL, &esp_xtensa_ccompare_cb, esp32->cpu[i]);
-
     }
 }
 
@@ -1492,6 +1507,8 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 
 XtensaCPU *APPcpu = NULL;
 
+XtensaCPU *PROcpu = NULL;
+
 
 
 static void esp_io_write(void *opaque, hwaddr addr,
@@ -1704,6 +1721,25 @@ if (addr>=0x12000 && addr<0x13ffc) {
         case 0xcc:
            printf("EMAC_CLK_EN_REG %" PRIx64 "\n" ,val);
            // REG_SET_BIT(EMAC_CLK_EN_REG, EMAC_CLK_EN); 
+           break;
+
+        case 0x48000:
+           {
+              printf("RTC_CNTL_OPTIONS0_REG, 3ff48000\n");
+              if (val==0x30) {
+                if (APPcpu) {
+                    cpu_reset(APPcpu);
+                    xtensa_runstall(&APPcpu->env, true);
+                }
+                if (PROcpu) {
+                    cpu_reset(PROcpu);
+                    //0x400076dd
+                    PROcpu->env.pc=0x40000400;
+                    xtensa_runstall(&PROcpu->env, false);
+                }
+
+              }
+           }
            break;
         case 0x48088:
            printf("RTC_CNTL_DIG_ISO_REG 3ff48088\n");
@@ -2102,6 +2138,10 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
         if (i==1) {
           APPcpu =cpu;
+        }
+
+        if (i==0) {
+          PROcpu=cpu;
         }
         
         esp32->cpu[i] = cpu;
