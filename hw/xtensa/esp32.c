@@ -1232,6 +1232,10 @@ void memdump(uint32_t mem,uint32_t len)
 
 void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
 {
+        if (flash_start==0x01000000) {
+            // Special value 0x100 to mark begining. Should not be mapped
+            return;
+        }
         fprintf(stderr,"(qemu)  %08X to memory, %08X\n",flash_start,mem_addr);
         printf("Flash map data to  %08X to memory, %08X\n",flash_start,mem_addr);
         // I dont know how this works. Guessing
@@ -1277,12 +1281,8 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 
         if (addr==0x123fc)
         {
-            if (nv_init_called==true) 
-            {
-                // This might not be correct but bootloader sets up this.
-                //fprintf(stderr,"MMU emu %d\n",pro_MMU_REG[0]);
-                //mapFlashToMem(0x4000, 0x3f404000,0x10000-0x4000);
-            }
+            // Bootlader already did this, it should be safe to map this, app expects it
+            mapFlashToMem(0x7000, 0x3f407000,0x10000-0x7000);
             nv_init_called=true;
         }
 
@@ -1418,6 +1418,18 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            static int silly=0;
            return silly;
            break;
+    
+      // Mac adress with crc, 24:0a:c4:00:c8:70,   crc ec
+      case 0x5a004:
+           printf("EFUSE MAC\n"); 
+           return 0xc400c870;
+           break;
+      case 0x5a008:
+           printf("EFUSE MAC\n"); 
+           return 0xffda240a;
+           break;
+
+
        case 0x5a010:
            printf("EFUSE_BLK0_RDATA4_REG 3ff5a010=01\n");
            return 0x01;
@@ -1518,16 +1530,17 @@ if (addr>=0x10000 && addr<0x11ffc) {
      if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
             // Partition table
             // 0x8000
-            // Try ignoring  nv_init_called when testing bootloader         
-            //if (nv_init_called) {
+            // TO TEST BOOTLOADER ----> Ignore  nv_init_called when testing bootloader         
+            if (nv_init_called) {
                 // Data is located and used at 0x3f400000  0x3f404000 ???
                 // Try this for bootloader
                 // TO TEST BOOTLOADER UNCOMMENT THIS ---->
                 //mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
                 // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000 
-                //mapFlashToMem(0x5000, 0x3f405000,0x10000-0x5000); 
-
-            //}
+                if (val!=0x100) {
+                //    mapFlashToMem(val*0x10000 + 0x6000, 0x3f406000,0x10000-0x6000); 
+                }
+            }
       }
    }
    // TO TEST BOOTLOADER comment test for nv_init_called ---->
@@ -1538,6 +1551,19 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x10008) {
                 mapFlashToMem(val*0x10000, 0x3f420000,0x10000);
         }
+        if (addr==0x1000c) {
+                mapFlashToMem(val*0x10000, 0x3f430000,0x10000);
+        }
+        if (addr==0x10010) {
+                mapFlashToMem(val*0x10000, 0x3f440000,0x10000);
+        }
+        if (addr==0x10014) {
+                mapFlashToMem(val*0x10000, 0x3f450000,0x10000);
+        }
+        if (addr==0x10018) {
+                mapFlashToMem(val*0x10000, 0x3f460000,0x10000);
+        }
+
    }
 
 
@@ -1740,6 +1766,7 @@ typedef struct Esp32WifiState {
     int i2c_reg;
 } Esp32WifiState;
 
+static unsigned char guess=0x98;
 
 
 static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
@@ -1779,6 +1806,8 @@ wifi write e004,662
 wifi read e004 
 wifi read e004 
 
+
+get_rf_freq_init
 
 #-1 #0  0x40004148 in rom_i2c_readReg ()
 #0  0x400041c3 in rom_i2c_readReg_Mask ()
@@ -1833,6 +1862,11 @@ ec
 /*    
 rom_i2c_reg block 0x67 reg 0x6 57
 */
+
+    if (addr==0xe004) {
+        //fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
+    }
+
     if (s->i2c_block==0x67) {
         if (addr==0xe004) {
             //fprintf(stderr,"(qemu ret) internal i2c block 0x67 %02x\n",s->i2c_reg );            
@@ -1862,7 +1896,6 @@ rom_i2c_reg block 0x67 reg 0x6 57
 
     if (s->i2c_block==0x62) {
         if (addr==0xe004) {
-            static unsigned char guess=0x00;
 
             //fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
             
@@ -1874,7 +1907,7 @@ rom_i2c_reg block 0x67 reg 0x6 57
                 case 4: return 0xb4;
                 case 5: return 0x00;
                 case 6: return 0x02;
-                case 7: return guess;
+                case 7: return (100*guess++);
 /*              case 8: return 0x00;
                 case 9: return 0x07;
                 case 10: return 0xb0;
@@ -1940,12 +1973,13 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
 
     pthread_mutex_lock(&mutex);
 
+
     if (addr==0xe004) {
       s->i2c_block= val & 0xff;
       s->i2c_reg= (val>>8) & 0xff;
-      if (s->i2c_block!=0x62 && s->i2c_block!=0x67) 
+      //if (s->i2c_block!=0x62 && s->i2c_block!=0x67) 
       {
-         fprintf(stderr,"(qemu) internal i2c %02x %d\n",s->i2c_block,s->i2c_reg );
+         //fprintf(stderr,"(qemu) internal i2c %02x %d\n",s->i2c_block,s->i2c_reg );
       }
     }
 
@@ -2073,9 +2107,11 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     qemu_register_reset(esp32_reset, esp32);
 
     nv_init_called=false;
+    // TO TEST BOOTLOADER maybe dont initialise these ---->
+
     // Initate same as after running bootloader
-    pro_MMU_REG[4]=100;
-    app_MMU_REG[4]=100;
+    //pro_MMU_REG[0]=2;
+    //app_MMU_REG[0]=2;
     pro_MMU_REG[77]=4;
     app_MMU_REG[77]=4;
     pro_MMU_REG[78]=5;
