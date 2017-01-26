@@ -1275,7 +1275,7 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
             //memdump(mem_addr,0x4000);
             cpu_physical_memory_write(mem_addr, rom_data, len );
 
-            fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
+            //fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
         }        
 }
 
@@ -1298,6 +1298,8 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         {
             // Bootlader already did this, it should be safe to map this, app expects it
             mapFlashToMem(0x8000, 0x3f408000,0x10000-0x8000);
+            // TODO!! Only works for factory app
+            //mapFlashToMem(2*0x10000, 0x3f400000,0x10000);  
             nv_init_called=true;
         }
 
@@ -1538,7 +1540,8 @@ if (addr>=0x10000 && addr<0x11ffc) {
   }
 
 
-  if (addr==0x10134 || addr==0x10138|| addr==0x1013c || addr==0x10140) {
+  if (addr==0x10134 || addr==0x10138 || addr==0x1013c || addr==0x10140 || 
+      addr==0x10144 || addr==0x10148 || addr==0x1014c || addr==0x10150 ) {
     // Bootloader, loads instruction cache
     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
         // TO TEST BOOTLOADER UNCOMMENT THIS ---->
@@ -1592,7 +1595,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
 
     pro_MMU_REG[addr/4-0x10000/4]=val;
     if (val!=0) {
-       fprintf (stderr, "MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+       fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 
@@ -2156,10 +2159,13 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // Initate same as after running bootloader
     //pro_MMU_REG[0]=2;
     //app_MMU_REG[0]=2;
+    pro_MMU_REG[50]=4;
     pro_MMU_REG[77]=4;
     app_MMU_REG[77]=4;
     pro_MMU_REG[78]=5;
     app_MMU_REG[78]=5;
+    app_MMU_REG[79]=6;
+    pro_MMU_REG[79]=6;
 
 
     // Map all as ram 
@@ -2550,7 +2556,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
 
             //esp_phy_init, 0x400d0e2f
-            cpu_physical_memory_write(0x4000522d+3, retw_n, sizeof(retw_n));
+            //cpu_physical_memory_write(0x4000522d+3, retw_n, sizeof(retw_n));
 
 
             // This would have been nicer, however ram will be cleared by rom-functions later... 
