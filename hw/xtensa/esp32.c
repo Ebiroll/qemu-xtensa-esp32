@@ -600,6 +600,13 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     }
     if (val & ESP32_SPI_FLASH_CMD_WREN) {
         DEBUG_LOG("status wren\n");
+        unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+        // Not sure this is a good idea??
+        // Where is length field?
+        memcpy(s->flash_image + write_addr,
+            &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+            4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
         s->reg[ESP32_SPI_FLASH_STATUS] |= ESP32_SPI_FLASH_STATUS_WRENABLE;
     }
     if (val & ESP32_SPI_FLASH_CMD_USR) {
