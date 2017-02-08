@@ -561,6 +561,7 @@ typedef struct Esp32SpiState {
     //MemoryRegion cache;
     qemu_irq irq;
     void *flash_image;
+    int length;
 
     uint32_t reg[R_MAX];
 } Esp32SpiState;
@@ -603,6 +604,8 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
         unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
         // Not sure this is a good idea??
         // Where is length field?
+        DEBUG_LOG("len %d\n",s->length);
+
         memcpy(s->flash_image + write_addr,
             &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
             4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
@@ -751,6 +754,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
            *data_ptr = (original[0] << 24  | original[1] << 16  |  original[2] << 8 |  original[3] << 0 );  
        }
 #endif    
+       int length=1+(addr-0x80)/4;
 
        if (addr==0x9c)
        {
@@ -1283,6 +1287,7 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
             cpu_physical_memory_write(mem_addr, rom_data, len );
 
             //fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
+            free(rom_data);
         }        
 }
 
@@ -1695,6 +1700,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
                  }
                  cpu_physical_memory_write(0x40000000, rom_data, 0x63000*sizeof(unsigned char));
                 fprintf(stderr,"Rom is restored.\n");
+                free(rom_data);
             }
            }
 
@@ -2166,13 +2172,13 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // Initate same as after running bootloader
     //pro_MMU_REG[0]=2;
     //app_MMU_REG[0]=2;
-    pro_MMU_REG[50]=4;
+    //pro_MMU_REG[50]=4;
     pro_MMU_REG[77]=4;
     app_MMU_REG[77]=4;
     pro_MMU_REG[78]=5;
     app_MMU_REG[78]=5;
-    app_MMU_REG[79]=6;
-    pro_MMU_REG[79]=6;
+    //app_MMU_REG[79]=6;
+    //pro_MMU_REG[79]=6;
 
 
     // Map all as ram 
