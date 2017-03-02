@@ -72,6 +72,7 @@ esp_err_t ulp_run(uint32_t entry_point)
 // From Memorymapped.cpp
 extern const unsigned char* get_flashMemory();
 
+#define TYPE_ESP32_I2C "esp32_i2c"
 
 typedef struct Esp32 {
     XtensaCPU *cpu[2];
@@ -2107,6 +2108,9 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     CPUXtensaState *env = NULL;
     Esp32SpiState *spi;
     void *flash_image;
+    DeviceState *dev;
+    I2CBus *i2c;
+
 
 
     MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem;
@@ -2348,6 +2352,18 @@ spi = esp32_spi_init(1,system_io, 0x43000, "esp32.spi0",
 spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                     system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
+
+
+  // OLED , i2c0
+    if (false) {  // 0x40020000
+        // qdev_get_gpio_in(nvic, 8)
+        dev = sysbus_create_simple(TYPE_ESP32_I2C, 0x3FF53000 , NULL);
+        i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
+        if (true) {
+            i2c_create_slave(i2c, "ssd1306", 0x78);
+        }
+    }
+
 
 
 
