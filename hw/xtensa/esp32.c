@@ -2022,11 +2022,22 @@ rom_i2c_reg block 0x67 reg 0x6 57
     return 0x0;
 }
 
+extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
+
 
 static void esp_wifi_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
     Esp32WifiState *s=opaque;
+
+
+    // 0x01301c
+    if (addr>=0x01301c && addr<=0x01311c) {        
+        fprintf(stderr,"i2c apb write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+        esp32_i2c_fifo_dataSet((addr-0x01301c)/4,val);
+    }
+
+
 
     pthread_mutex_lock(&mutex);
 
@@ -2354,13 +2365,15 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
 
-  // OLED , i2c0
+    // OLED , on i2c0
     if (false) {  // 0x40020000
         // qdev_get_gpio_in(nvic, 8)
+        // I2c0
         dev = sysbus_create_simple(TYPE_ESP32_I2C, 0x3FF53000 , NULL);
         i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
         if (true) {
-            i2c_create_slave(i2c, "ssd1306", 0x78);
+            //i2c_create_slave(i2c, "ssd1306", 0x78);
+            i2c_create_slave(i2c, "ssd1306", 0x02);
         }
     }
 

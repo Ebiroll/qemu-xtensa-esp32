@@ -60,7 +60,7 @@ typedef struct {
     int redraw;
     enum ssd1306_mode mode;
     enum ssd1306_cmd cmd_state;
-    uint8_t framebuffer[132*8];
+    uint8_t framebuffer[128*64];
 } ssd1306_state;
 
 static int ssd1306_recv(I2CSlave *i2c)
@@ -82,7 +82,8 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
         else if (data == 0x40)
             s->mode = SSD1306_DATA;
         else
-            BADF("Unexpected byte 0x%x\n", data);
+            //BADF("Unexpected byte 0x%x\n", data);
+            DPRINTF(" ssd1306 Unexpected byte 0x%x\n", data);
         break;
     case SSD1306_DATA:
         DPRINTF("data 0x%02x\n", data);
@@ -184,11 +185,14 @@ static void ssd1306_event(I2CSlave *i2c, enum i2c_event event)
 {
     ssd1306_state *s = SSD1306(i2c);
 
+    DPRINTF("ssd1306_event 0x%02x\n", (int)event);
+
     switch (event) {
     case I2C_FINISH:
         s->mode = SSD1306_IDLE;
         break;
     case I2C_START_RECV:
+        DPRINTF("ssd1306_I2C_START_RECV  0x%02x\n", (int)event);
     case I2C_START_SEND:
     case I2C_NACK:
         /* Nothing to do.  */
@@ -209,6 +213,11 @@ static void ssd1306_update_display(void *opaque)
     char colortab[MAGNIFY * 8];
     int dest_width;
     uint8_t mask;
+
+    for(x=0;x<200;x++)
+    {
+      s->framebuffer[x]=x;
+    }
 
     if (!s->redraw)
         return;
