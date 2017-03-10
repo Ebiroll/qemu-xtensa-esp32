@@ -174,7 +174,16 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
                             if (opcode==0) {
                                 // cmd restart
-                                i2c_start_transfer(s->bus,apb_data[buffer_ix++],1);
+                                unsigned int address = apb_data[buffer_ix] >> 1;
+                                unsigned int send = apb_data[buffer_ix] & 0x01;
+                                buffer_ix++;
+                                if (send==1) send=0; else send=1;
+
+                                qemu_log_mask(LOG_GUEST_ERROR,
+                                              "%s: start transfer adress 0x%x\n", __func__, (int)address);
+
+
+                                i2c_start_transfer(s->bus,address,send);
 
                             qemu_log_mask(LOG_GUEST_ERROR,
                                "%s:i2c_start_transfer 0x%x\n" , __func__,apb_data[buffer_ix-1]);
