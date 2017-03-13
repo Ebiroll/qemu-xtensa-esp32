@@ -190,6 +190,28 @@ static void tmpbme280_event(I2CSlave *i2c, enum i2c_event event)
 {
     TMPBME280State *s = TMPBME280(i2c);
 
+    switch (event) {
+        case I2C_START_RECV:
+             fprintf(stderr,"tmpbme280_event I2C_START_RECV\n");
+          break;
+          case I2C_START_SEND:
+             fprintf(stderr,"tmpbme280_event I2C_START_SEND\n");
+          break;
+          case I2C_FINISH:
+             fprintf(stderr,"tmpbme280_event I2C_FINISH\n");
+          break;
+           case I2C_NACK:
+             fprintf(stderr,"tmpbme280_event I2C_NACK\n");
+          break;
+
+          break;
+          default:
+            fprintf(stderr,"tmpbme280_event %d\n",event);
+          break;          
+    }
+
+
+
     if (event == I2C_START_RECV) {
         tmpbme280_read(s);
     }

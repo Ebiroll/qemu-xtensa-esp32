@@ -86,7 +86,7 @@ typedef struct connect_data {
     int uart_num;
 } connect_data;
 
-
+qemu_irq uart0_irq;
 
 void *connection_handler(void *connect);
 void *gdb_socket_thread(void *dummy);
@@ -189,11 +189,23 @@ static void esp32_serial_irq_update(Esp32SerialState *s)
     s->reg[ESP32_UART_INT_ST] |= s->reg[ESP32_UART_INT_RAW];
     //fprintf(stderr,"CHECKING IRQ\n");
 
-    if (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA]) {
-        fprintf(stderr,"RAISING IRQ\n");
-        qemu_irq_raise(s->irq);
+    if (s->uart_num==0 || (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA])) {
+        //fprintf(stderr,"RAISING IRQ\n");
+        if (s->uart_num==0) {
+           qemu_irq_raise(uart0_irq);
+        }
+        else
+        {
+           qemu_irq_raise(s->irq);
+        }
     } else {
-        qemu_irq_lower(s->irq);
+        if (s->uart_num==0) {
+           qemu_irq_lower(uart0_irq);
+        }
+        else
+        {
+           qemu_irq_lower(s->irq);
+        }
     }
 }
 
@@ -1447,6 +1459,13 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x40000000;
            break;
 
+       // Handled by i2c 
+       //case 0x5302c:
+       //    printf(" I2C INTSTATUS 3ff5302c=%08X\n",0x0);
+       //    return 0x0;
+       //    break;
+
+
         case 0x58040:
            printf("SDIO or WAKEUP??\n"); 
            static int silly=0;
@@ -1604,10 +1623,8 @@ if (addr>=0x10000 && addr<0x11ffc) {
    }
 
 
-
-
     pro_MMU_REG[addr/4-0x10000/4]=val;
-    if (val!=0) {
+    if (val!=0 && val!=0x100) {
        fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
@@ -1738,6 +1755,16 @@ if (addr>=0x12000 && addr<0x13ffc) {
         case 0xcc:
            printf("EMAC_CLK_EN_REG %" PRIx64 "\n" ,val);
            // REG_SET_BIT(EMAC_CLK_EN_REG, EMAC_CLK_EN); 
+           break;
+
+       case 0x1c8:
+           printf("DPORT_PRO_I2C_EXT0_INTR_MAP_REG %" PRIx64 "\n" ,val);   
+           esp32_i2c_interruptSet(PROcpu->env.irq_inputs[val]);
+           break;
+
+       case 0x18c:
+           printf("DPORT_PRO_UART_INTR_MAP_REG %" PRIx64 "\n" ,val);  
+           uart0_irq=PROcpu->env.irq_inputs[(int)val];
            break;
 
         case 0x48000:
@@ -2024,6 +2051,8 @@ rom_i2c_reg block 0x67 reg 0x6 57
 
 extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
 
+extern void esp32_i2c_interruptSet(qemu_irq new_irq);
+
 
 static void esp_wifi_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
@@ -2291,6 +2320,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     gdb_serial[0]=esp32_serial_init(0,system_io, 0x40000, "esp32.uart0",
                         esp32->cpu[0]->env.irq_inputs[0], serial_hds[0]);
 
+                        uart0_irq=esp32->cpu[0]->env.irq_inputs[0];
+
 
     gdb_serial[1]=esp32_serial_init(1,system_io, 0x50000, "esp32.uart1",
                         esp32->cpu[0]->env.irq_inputs[1], serial_hds[0]);
@@ -2374,6 +2405,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
         if (true) {
             //i2c_create_slave(i2c, "ssd1306", 0x78);
             i2c_create_slave(i2c, "ssd1306", 0x02);
+            i2c_create_slave(i2c, "tmpbme280", 0x77);
         }
     }
 

@@ -81,6 +81,12 @@ unsigned int apb_data[128];
 // TODO i2c_esp32.h !!
 void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
 
+void esp32_i2c_interruptSet(qemu_irq new_irq);
+
+//        qemu_irq_raise(s->irq);
+//        qemu_irq_lower(s->irq);
+
+
 
 // TODO, Let the esp32_i2c driver own the apb data, this is a tired mans solution
 void esp32_i2c_fifo_dataSet(int offset,unsigned int data) {
@@ -106,12 +112,26 @@ typedef struct Esp32I2CState {
     int in;
 } Esp32I2CState;
 
+qemu_irq irq;
+
+void esp32_i2c_interruptSet(qemu_irq new_irq) 
+{
+    irq=new_irq;
+}
+
+
 static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
                                    unsigned size)
 {
     Esp32I2CState *s = (Esp32I2CState *)opaque;
 
+    qemu_irq_lower(irq);
+
     switch (offset) {
+        case I2C_INT_STATUS_REG*4:
+            // I2C_TXFIFO_EMPTY_INT_ST_M  BIT(1)
+            return(0);
+            break;
         case I2C_CTR_REG*4:
             //s->i2c_ctr_reg=0;
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -177,7 +197,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                 unsigned int address = apb_data[buffer_ix] >> 1;
                                 unsigned int send = apb_data[buffer_ix] & 0x01;
                                 buffer_ix++;
-                                if (send==1) send=0; else send=1;
+                                //if (send==1) send=0; else send=1;
 
                                 qemu_log_mask(LOG_GUEST_ERROR,
                                               "%s: start transfer adress 0x%x\n", __func__, (int)address);
@@ -194,12 +214,19 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                 // write
                                 for (data_ix=0;data_ix<len;data_ix++) {
                                    i2c_send(s->bus,apb_data[buffer_ix++]);
+                                    qemu_log_mask(LOG_GUEST_ERROR,
+                                       "%s: i2c_send 0x%x\n", __func__, (int)apb_data[buffer_ix-1]);
+
                                 }
                             }
 
                             if (opcode==2) {
                                 // read
                                 int ret = i2c_recv(s->bus);     
+
+                                qemu_log_mask(LOG_GUEST_ERROR,
+                                    "%s: i2c_recv 0x%x\n", __func__, (int)ret);
+
                                 // TODO, put data in fifo??
                                 // length??           
                             }
@@ -207,9 +234,11 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             if (opcode==3) {
                                 // stop               
                                 i2c_end_transfer(s->bus);
+                                qemu_irq_raise(irq);
                             }
 
-                            if (opcode==3) {
+                            if (opcode==4) {
+                                qemu_irq_raise(irq);
                                 // end   
                             }
 
