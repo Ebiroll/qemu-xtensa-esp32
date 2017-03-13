@@ -23,6 +23,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/i2c/i2c.h"
+#include "hw/i2c/i2c_esp32.h"
 #include "qemu/log.h"
 
 #define BIT(nr)                 (1UL << (nr))
@@ -78,10 +79,6 @@ enum {
 
 unsigned int apb_data[128];
 
-// TODO i2c_esp32.h !!
-void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
-
-void esp32_i2c_interruptSet(qemu_irq new_irq);
 
 //        qemu_irq_raise(s->irq);
 //        qemu_irq_lower(s->irq);
@@ -107,6 +104,7 @@ typedef struct Esp32I2CState {
     unsigned int command_reg[16];
     unsigned int  i2c_ctr_reg;
     //unsigned int data_address;
+    unsigned int int_status;
     int num_out;
     int out;
     int in;
@@ -130,7 +128,8 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
     switch (offset) {
         case I2C_INT_STATUS_REG*4:
             // I2C_TXFIFO_EMPTY_INT_ST_M  BIT(1)
-            return(0);
+            // I2C_TRANS_COMPLETE_INT  BIT(7)
+            return(s->int_status);
             break;
         case I2C_CTR_REG*4:
             //s->i2c_ctr_reg=0;
@@ -176,6 +175,11 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     case 0:
         //s->out |= value & 3;
         break;
+    case I2C_INT_CLR_REG*4:
+        s->int_status=0;
+        break;
+        
+    break;
     case I2C_CTR_REG*4:
         //s->out &= ~value;
         {
@@ -234,11 +238,14 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             if (opcode==3) {
                                 // stop               
                                 i2c_end_transfer(s->bus);
+                                s->int_status=BIT(7);
                                 qemu_irq_raise(irq);
                             }
 
                             if (opcode==4) {
+                                s->int_status=BIT(7);
                                 qemu_irq_raise(irq);
+
                                 // end   
                             }
 

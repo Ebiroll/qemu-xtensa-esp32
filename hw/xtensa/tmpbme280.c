@@ -96,7 +96,7 @@ static void tmpbme280_read(TMPBME280State *s)
 {
     s->len = 0;
 
-    int regnum=s->pointer & 0x1f;
+    int regnum=s->pointer & 0xff;
     int reg_pos=regnum-0x80;
 
 
