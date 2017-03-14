@@ -29,6 +29,10 @@
 #define BIT(nr)                 (1UL << (nr))
 
 
+#define  I2C_TXFIFO_EMPTY_INT_ST_M  BIT(1)
+#define  I2C_TRANS_COMPLETE_INT  BIT(7)
+
+
 #define DEFINE_BITS(prefix, reg, field, shift, len) \
     prefix##_##reg##_##field##_SHIFT = shift, \
     prefix##_##reg##_##field##_LEN = len, \
@@ -77,22 +81,20 @@ enum {
      I2C_FIFO_START = 0x100/4  
  };
 
+// TODO, Let the esp32_i2c driver own the apb data
+
 unsigned int apb_data[128];
 
 
 //        qemu_irq_raise(s->irq);
 //        qemu_irq_lower(s->irq);
 
-
-
-// TODO, Let the esp32_i2c driver own the apb data, this is a tired mans solution
 void esp32_i2c_fifo_dataSet(int offset,unsigned int data) {
     if (offset<128)
        apb_data[offset]=data;
 }
 
 
-#define TYPE_ESP32_I2C "esp32_i2c"
 #define ESP32_I2C(obj) \
     OBJECT_CHECK(Esp32I2CState, (obj), TYPE_ESP32_I2C)
 
@@ -110,6 +112,7 @@ typedef struct Esp32I2CState {
     int in;
 } Esp32I2CState;
 
+// The interrupt is dynamically allocated by writing to DPORT_PRO_I2C_EXT0_INTR_MAP_REG
 qemu_irq irq;
 
 void esp32_i2c_interruptSet(qemu_irq new_irq) 
@@ -125,13 +128,11 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
 
     qemu_irq_lower(irq);
 
-    switch (offset) {
-        case I2C_INT_STATUS_REG*4:
-            // I2C_TXFIFO_EMPTY_INT_ST_M  BIT(1)
-            // I2C_TRANS_COMPLETE_INT  BIT(7)
+    switch (offset/4) {
+        case I2C_INT_STATUS_REG:
             return(s->int_status);
             break;
-        case I2C_CTR_REG*4:
+        case I2C_CTR_REG:
             //s->i2c_ctr_reg=0;
             qemu_log_mask(LOG_GUEST_ERROR,
                     "%s: I2C_CTR_REGt 0x%x\n", __func__, (int)s->i2c_ctr_reg);
@@ -139,22 +140,22 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
             return(s->i2c_ctr_reg);
             break;
 
-        case I2C_COMD0_REG*4:
-        case I2C_COMD1_REG*4:
-        case I2C_COMD2_REG*4:
-        case I2C_COMD3_REG*4:
-        case I2C_COMD4_REG*4:
-        case I2C_COMD5_REG*4:
-        case I2C_COMD6_REG*4:
-        case I2C_COMD7_REG*4:
-        case I2C_COMD8_REG*4:
-        case I2C_COMD9_REG*4:
-        case I2C_COMD10_REG*4:
-        case I2C_COMD11_REG*4:
-        case I2C_COMD12_REG*4:
-        case I2C_COMD13_REG*4:
-        case I2C_COMD14_REG*4:
-        case I2C_COMD15_REG*4:
+        case I2C_COMD0_REG:
+        case I2C_COMD1_REG:
+        case I2C_COMD2_REG:
+        case I2C_COMD3_REG:
+        case I2C_COMD4_REG:
+        case I2C_COMD5_REG:
+        case I2C_COMD6_REG:
+        case I2C_COMD7_REG:
+        case I2C_COMD8_REG:
+        case I2C_COMD9_REG:
+        case I2C_COMD10_REG:
+        case I2C_COMD11_REG:
+        case I2C_COMD12_REG:
+        case I2C_COMD13_REG:
+        case I2C_COMD14_REG:
+        case I2C_COMD15_REG:
             // I2c comand done, master mode
             return(s->command_reg[(offset-(I2C_COMD0_REG*4))/4] | 0x8000);
             break;
@@ -171,23 +172,21 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     Esp32I2CState *s = (Esp32I2CState *)opaque;
     unsigned long u32_value=value & 0xffff;
 
-    switch (offset) {
+    switch (offset/4) {
     case 0:
         //s->out |= value & 3;
         break;
-    case I2C_INT_CLR_REG*4:
+    case I2C_INT_CLR_REG:
         s->int_status=0;
         break;
         
     break;
-    case I2C_CTR_REG*4:
-        //s->out &= ~value;
+    case I2C_CTR_REG:
         {
             int ix=0;
             if ((u32_value & BIT(5)) == BIT(5)) {
                 qemu_log_mask(LOG_GUEST_ERROR,
-                        "%s: START TRANSMIT!!!! 0x%x\n", __func__, s->num_out);   
-                    //int i2c_start_transfer(I2CBus *bus, uint8_t address, int recv);
+                        "%s: start transmit 0x%x\n", __func__, s->num_out);   
                 int buffer_ix=0;
                 int data_ix;
                 for (ix=0;ix<s->num_out;ix++) {
@@ -238,12 +237,12 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             if (opcode==3) {
                                 // stop               
                                 i2c_end_transfer(s->bus);
-                                s->int_status=BIT(7);
+                                s->int_status=I2C_TRANS_COMPLETE_INT;
                                 qemu_irq_raise(irq);
                             }
 
                             if (opcode==4) {
-                                s->int_status=BIT(7);
+                                s->int_status=I2C_TRANS_COMPLETE_INT;
                                 qemu_irq_raise(irq);
 
                                 // end   
@@ -266,31 +265,31 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                       
         break;
 
-   case I2C_FIFO_CONF_REG*4:
+   case I2C_FIFO_CONF_REG:
             qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: I2C_FIFO_CONF_REG 0x%x\n", __func__, (int)value & 0xffff);
          break;
 
-    case I2C_COMD3_REG*4:
+    case I2C_COMD3_REG:
             qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: I2C_COMD3_REG offset 0x%x\n", __func__, (int)offset);
 
 
-    case I2C_COMD0_REG*4:
-    case I2C_COMD1_REG*4:
-    case I2C_COMD2_REG*4:
-    case I2C_COMD4_REG*4:
-    case I2C_COMD5_REG*4:
-    case I2C_COMD6_REG*4:
-    case I2C_COMD7_REG*4:
-    case I2C_COMD8_REG*4:
-    case I2C_COMD9_REG*4:
-    case I2C_COMD10_REG*4:
-    case I2C_COMD11_REG*4:
-    case I2C_COMD12_REG*4:
-    case I2C_COMD13_REG*4:
-    case I2C_COMD14_REG*4:
-    case I2C_COMD15_REG*4:
+    case I2C_COMD0_REG:
+    case I2C_COMD1_REG:
+    case I2C_COMD2_REG:
+    case I2C_COMD4_REG:
+    case I2C_COMD5_REG:
+    case I2C_COMD6_REG:
+    case I2C_COMD7_REG:
+    case I2C_COMD8_REG:
+    case I2C_COMD9_REG:
+    case I2C_COMD10_REG:
+    case I2C_COMD11_REG:
+    case I2C_COMD12_REG:
+    case I2C_COMD13_REG:
+    case I2C_COMD14_REG:
+    case I2C_COMD15_REG:
      {
             char opcode= (value & 0x3800) >> 11;
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -301,7 +300,6 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
             s->command_reg[(offset-(I2C_COMD0_REG*4))/4]=value& 0xffff;
 
-            //s->out |= value & 3;
             qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: offset 0x%x\n", __func__, (int)offset);
 
@@ -317,8 +315,6 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: Offset 0x%x\n", __func__, (int)offset);
     }
-    //bitbang_i2c_set(s->bitbang, BITBANG_I2C_SCL, (s->out & 1) != 0);
-    //s->in = bitbang_i2c_set(s->bitbang, BITBANG_I2C_SDA, (s->out & 2) != 0);
 }
 
 static const MemoryRegionOps esp32_i2c_ops = {
@@ -332,7 +328,6 @@ static void esp32_i2c_init(Object *obj)
     DeviceState *dev = DEVICE(obj);
     Esp32I2CState *s = ESP32_I2C(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    //I2CBus *bus;
 
     s->i2c_ctr_reg=0;
 

@@ -66,13 +66,13 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include "qemu/timer.h"
 #include "inttypes.h"
 #include "hw/isa/isa.h"
+#include "hw/i2c/i2c_esp32.h"
 #include <poll.h>
 #include <error.h>
 
 // From Memorymapped.cpp
 extern const unsigned char* get_flashMemory();
 
-#define TYPE_ESP32_I2C "esp32_i2c"
 
 typedef struct Esp32 {
     XtensaCPU *cpu[2];
@@ -2396,7 +2396,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
 
-    // OLED , on i2c0
+    // OLED & tempsensor , on i2c0
     if (false) {  // 0x40020000
         // qdev_get_gpio_in(nvic, 8)
         // I2c0

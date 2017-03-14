@@ -48,8 +48,6 @@ typedef struct TMPBME280State {
     uint8_t config;
     int16_t temperature;
     int16_t limit[2];
-    int faults;
-    uint8_t alarm;
 } TMPBME280State;
 
 #endif

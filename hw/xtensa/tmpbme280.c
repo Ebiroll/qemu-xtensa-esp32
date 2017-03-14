@@ -90,7 +90,6 @@ static void tmpbme280_set_temperature(Object *obj, Visitor *v, const char *name,
     //tmpbme280_alarm_update(s);
 }
 
-static const int tmpbme280_faultq[4] = { 1, 2, 4, 6 };
 
 static void tmpbme280_read(TMPBME280State *s)
 {
@@ -103,34 +102,17 @@ static void tmpbme280_read(TMPBME280State *s)
     s->buf[s->len ++] = ((uint16_t) reg_dump[reg_pos]) >> 8;
     s->buf[s->len ++] = ((uint16_t) reg_dump[reg_pos]) >> 0;
 
+    // Cache all remaining registers
+    while(reg_pos< 16*8) {
+        reg_pos++;
 
-#if 0
-
-    if ((s->config >> 1) & 1) {					/* TM */
-        s->alarm = 0;
+        s->buf[s->len ++] = ((uint16_t) reg_dump[reg_pos]) >> 8;
+        s->buf[s->len ++] = ((uint16_t) reg_dump[reg_pos]) >> 0;
     }
-    switch (s->pointer & 0x1f) {
-    case TMPBME280_REG_TEMPERATURE:
-        s->buf[s->len ++] = (((uint16_t) s->temperature) >> 8);
-        s->buf[s->len ++] = (((uint16_t) s->temperature) >> 0) &
-                (0xf0 << ((~s->config >> 5) & 3));		/* R */
-        break;
 
-    case TMPBME280_REG_CONFIG:
-        s->buf[s->len ++] = s->config;
-        break;
+    // Reset to start of buffer
+    s->len = 0;
 
-    case TMPBME280_REG_T_LOW:
-        s->buf[s->len ++] = ((uint16_t) s->limit[0]) >> 8;
-        s->buf[s->len ++] = ((uint16_t) s->limit[0]) >> 0;
-        break;
-
-    case TMPBME280_REG_T_HIGH:
-        s->buf[s->len ++] = ((uint16_t) s->limit[1]) >> 8;
-        s->buf[s->len ++] = ((uint16_t) s->limit[1]) >> 0;
-        break;
-    }
-#endif
 }
 
 static void tmpbme280_write(TMPBME280State *s)
@@ -143,8 +125,6 @@ static void tmpbme280_write(TMPBME280State *s)
         if (s->buf[0] & ~s->config & (1 << 0))			/* SD */
             printf("%s: TMPBME280 shutdown\n", __FUNCTION__);
         s->config = s->buf[0];
-        s->faults = tmpbme280_faultq[(s->config >> 3) & 3];	/* F */
-        //tmpbme280_alarm_update(s);
         break;
 
     case TMPBME280_REG_T_LOW:
@@ -157,9 +137,11 @@ static void tmpbme280_write(TMPBME280State *s)
     }
 }
 
+// Called when master reads from slave, 
 static int tmpbme280_rx(I2CSlave *i2c)
 {
     TMPBME280State *s = TMPBME280(i2c);
+    fprintf(stderr,"tmpbme280_rx %d\n",s->buf[s->len]);
 
     if (s->len < 2) {
         return s->buf[s->len ++];
@@ -168,9 +150,12 @@ static int tmpbme280_rx(I2CSlave *i2c)
     }
 }
 
+// Called when master writes to slave, should only be register number (pointer)
 static int tmpbme280_tx(I2CSlave *i2c, uint8_t data)
 {
     TMPBME280State *s = TMPBME280(i2c);
+
+    fprintf(stderr,"tmpbme280_tx %d\n",data);
 
     if (s->len == 0) {
         s->pointer = data;
@@ -210,9 +195,12 @@ static void tmpbme280_event(I2CSlave *i2c, enum i2c_event event)
           break;          
     }
 
+    if (event == I2C_START_SEND) {
 
+    }
 
     if (event == I2C_START_RECV) {
+        // prepare buffer with data from what pointer
         tmpbme280_read(s);
     }
 
@@ -223,7 +211,6 @@ static int tmpbme280_post_load(void *opaque, int version_id)
 {
     TMPBME280State *s = opaque;
 
-    s->faults = tmpbme280_faultq[(s->config >> 3) & 3];		/* F */
 
     return 0;
 }
@@ -240,7 +227,6 @@ static const VMStateDescription vmstate_tmpbme280 = {
         VMSTATE_UINT8(config, TMPBME280State),
         VMSTATE_INT16(temperature, TMPBME280State),
         VMSTATE_INT16_ARRAY(limit, TMPBME280State, 2),
-        VMSTATE_UINT8(alarm, TMPBME280State),
         VMSTATE_I2C_SLAVE(i2c, TMPBME280State),
         VMSTATE_END_OF_LIST()
     }
@@ -253,8 +239,6 @@ static void tmpbme280_reset(I2CSlave *i2c)
     s->temperature = 0;
     s->pointer = 0;
     s->config = 0;
-    s->faults = tmpbme280_faultq[(s->config >> 3) & 3];
-    s->alarm = 0;
 
 }
 
