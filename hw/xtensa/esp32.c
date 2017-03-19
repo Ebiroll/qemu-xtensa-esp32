@@ -595,8 +595,19 @@ static uint64_t esp32_spi_read(void *opaque, hwaddr addr, unsigned size)
 static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
                             uint64_t val, unsigned size)
 {
-    //DEBUG_LOG("-esp32_spi_cmd %08x\n",val);
+    //DEBUG_LOG("esp32_spi_cmd %08x\n",val);
     //s->reg[addr / 4] = val;
+
+    if (val & 0x1000000) {
+            DEBUG_LOG("esp32_spi_cmd_erase??? %08x\n",val);
+            unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+
+    // Set all in sector to 0xff
+        memset(s->flash_image + write_addr,
+            0xff,  
+            0x1000);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+    }
 
     if (val & ESP32_SPI_FLASH_CMD_READ) {
         if (ESP32_SPI_GET(s, USER, FLASH_MODE)) {
