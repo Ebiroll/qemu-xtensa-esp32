@@ -1401,8 +1401,8 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                     break;
 
                 case 6: /*RER*/
-                    TBD();
-                    printf("HOST RER TBD\n");
+                    //TBD();
+                    fprintf(stderr,"HOST RER TBD\n");
                     break;
 
                 case 7: /*WER*/
@@ -2219,13 +2219,13 @@ static void disas_xtensa_insn(CPUXtensaState *env, DisasContext *dc)
                     break;
 
                 default: /*reserved*/
-                    RESERVED();
+                    //RESERVED();
                     break;
                 }
                 break;
 
             default: /*reserved*/
-                RESERVED();
+                //RESERVED();
                 break;
             }
             break;

@@ -589,6 +589,14 @@ static uint64_t esp32_spi_read(void *opaque, hwaddr addr, unsigned size)
         return 0;
     }
     DEBUG_LOG("0x%08x\n", s->reg[addr / 4]);
+
+
+    if (s->spiNum==2) {
+        if (addr==0x38) {
+            // SPI_TRANS_DONE
+            s->reg[addr / 4]=0xff;
+        }
+    }
     return s->reg[addr / 4];
 }
 
@@ -597,6 +605,10 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
 {
     //DEBUG_LOG("esp32_spi_cmd %08x\n",val);
     //s->reg[addr / 4] = val;
+
+    if (s->spiNum!=0) {
+        return;
+    }
 
     if (val & 0x1000000) {
             DEBUG_LOG("esp32_spi_cmd_erase??? %08x\n",val);
@@ -786,6 +798,11 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
          //unsigned int *set=(uint32_t)s->flash_image + (uint32_t)silly +(uint32_t)(addr-0x80);
          //*set=val;
          // Memory mapped file
+         if (s->spiNum!=0) {
+             return;
+         }
+
+
          memcpy(s->flash_image + write_addr,
             &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
             4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
@@ -2225,9 +2242,12 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // TO TEST BOOTLOADER maybe dont initialise these ---->
 
     // Initate same as after running bootloader
-    //pro_MMU_REG[0]=2;
-    //app_MMU_REG[0]=2;
+    pro_MMU_REG[0]=2;
+    app_MMU_REG[0]=2;
     //pro_MMU_REG[50]=4;
+    // This requires a valid flash image
+    mapFlashToMem(0x0000, 0x3f400000,0x10000);
+
     pro_MMU_REG[77]=4;
     app_MMU_REG[77]=4;
     pro_MMU_REG[78]=5;
@@ -2397,6 +2417,10 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     }
 
 
+spi = esp32_spi_init(2,system_io, 0x64000, "esp32.spi0",
+                    system_memory, /*cache*/ 0x800000, "esp32.flash",
+                    xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
+
 spi = esp32_spi_init(1,system_io, 0x43000, "esp32.spi0",
                     system_memory, /*cache*/ 0x800000, "esp32.flash",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
@@ -2408,14 +2432,14 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
 
     // OLED & tempsensor , on i2c0
-    if (false) {  // 0x40020000
+    if (true) {  // 0x40020000
         // qdev_get_gpio_in(nvic, 8)
         // I2c0
         dev = sysbus_create_simple(TYPE_ESP32_I2C, 0x3FF53000 , NULL);
         i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
         if (true) {
-            //i2c_create_slave(i2c, "ssd1306", 0x78);
-            i2c_create_slave(i2c, "ssd1306", 0x02);
+            i2c_create_slave(i2c, "ssd1306", 0x78);
+            //i2c_create_slave(i2c, "ssd1306", 0x02);
             i2c_create_slave(i2c, "tmpbme280", 0x77);
         }
     }
