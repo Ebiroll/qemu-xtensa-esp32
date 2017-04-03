@@ -134,8 +134,8 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
             break;
         case I2C_CTR_REG:
             //s->i2c_ctr_reg=0;
-            qemu_log_mask(LOG_GUEST_ERROR,
-                    "%s: I2C_CTR_REGt 0x%x\n", __func__, (int)s->i2c_ctr_reg);
+           // qemu_log_mask(LOG_GUEST_ERROR,
+           //         "%s: I2C_CTR_REGt 0x%x\n", __func__, (int)s->i2c_ctr_reg);
 
             return(s->i2c_ctr_reg);
             break;
@@ -161,8 +161,8 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
             break;
     }
 
-    qemu_log_mask(LOG_GUEST_ERROR,
-                    "%s: Offset 0x%x\n", __func__, (int)offset);
+    //qemu_log_mask(LOG_GUEST_ERROR,
+    //                "%s: Offset 0x%x\n", __func__, (int)offset);
     return -1;
 }
 
@@ -197,19 +197,21 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
                             if (opcode==0) {
                                 // cmd restart
-                                unsigned int address = apb_data[buffer_ix] >> 1;
+                                unsigned int address = apb_data[buffer_ix] ;
+
+                                //address = 0x78;
                                 unsigned int send = apb_data[buffer_ix] & 0x01;
                                 buffer_ix++;
                                 //if (send==1) send=0; else send=1;
 
                                 qemu_log_mask(LOG_GUEST_ERROR,
-                                              "%s: start transfer adress 0x%x\n", __func__, (int)address);
+                                              "%s: start transfer adress --------- 0x%x\n", __func__, (int)address);
 
 
                                 i2c_start_transfer(s->bus,address,send);
 
-                            qemu_log_mask(LOG_GUEST_ERROR,
-                               "%s:i2c_start_transfer 0x%x\n" , __func__,apb_data[buffer_ix-1]);
+                            //qemu_log_mask(LOG_GUEST_ERROR,
+                            //   "%s:i2c_start_transfer 0x%x\n" , __func__,apb_data[buffer_ix-1]);
 
                             }
 
@@ -257,11 +259,11 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
         // Clear transmit bit
         s->i2c_ctr_reg=s->i2c_ctr_reg & (0xffdf);
         //s->i2c_ctr_reg=0;
-            qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: I2C_CTR_REG 0x%x\n", __func__, (int)value & 0xffff);
+            //qemu_log_mask(LOG_GUEST_ERROR,
+            //          "%s: I2C_CTR_REG 0x%x\n", __func__, (int)value & 0xffff);
 
-            qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: I2C_CTR_REG 0x%x\n", __func__, (int)s->i2c_ctr_reg & 0xffff);
+            //qemu_log_mask(LOG_GUEST_ERROR,
+            //          "%s: I2C_CTR_REG 0x%x\n", __func__, (int)s->i2c_ctr_reg & 0xffff);
                       
         break;
 
@@ -292,21 +294,21 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     case I2C_COMD15_REG:
      {
             char opcode= (value & 0x3800) >> 11;
-            qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s:OPCODE 0x%x\n" , __func__,opcode);
+            //qemu_log_mask(LOG_GUEST_ERROR,
+            //          "%s:OPCODE 0x%x\n" , __func__,opcode);
 
             // Assume commands are filled in sequentually
             s->num_out=1+(offset-I2C_COMD0_REG*4)/4;
 
             s->command_reg[(offset-(I2C_COMD0_REG*4))/4]=value& 0xffff;
 
-            qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: offset 0x%x\n", __func__, (int)offset);
+            // qemu_log_mask(LOG_GUEST_ERROR,
+            //       "%s: offset 0x%x\n", __func__, (int)offset);
 
 
 
-            qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: I2C_COMD_REG_%d 0x%x\n", __func__,(offset-(I2C_COMD0_REG*4))/4, (int)value& 0xffff);
+            //qemu_log_mask(LOG_GUEST_ERROR,
+            //          "%s: I2C_COMD_REG_%d 0x%x\n", __func__,(offset-(I2C_COMD0_REG*4))/4, (int)value& 0xffff);
 
 
          }
