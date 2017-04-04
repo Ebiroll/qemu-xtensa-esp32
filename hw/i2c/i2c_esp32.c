@@ -81,18 +81,47 @@ enum {
      I2C_FIFO_START = 0x100/4  
  };
 
-// TODO, Let the esp32_i2c driver own the apb data
+const char *I2C_REG_NAME[]= {
+    "I2C_SCL_LOW_PERIOD_REG",
+    "I2C_CTR_REG",
+    "I2C_SR_REG",
+    "I2C_TO_REG",
+    "I2C_SLAVE_ADDR_REG",
+    "I2C_RXFIFO_ST_REG",
+    "I2C_FIFO_CONF_REG",  
+    "I2C_SCL_UNUSED1",         
+    "I2C_INT_RAW_REG",
+    "I2C_INT_CLR_REG",
+    "I2C_INT_ENA_REG",
+    "I2C_INT_STATUS_REG",
+    "I2C_SDA_HOLD_REG",
+    "I2C_SDA_SAMPLE_REG",
+    "I2C_SCL_HIGH_PERIOD_REG",
+    "I2C_SCL_UNUSED2",    
+    "I2C_SCL_START_HOLD_REG",
+    "I2C_SCL_RSTART_SETUP_REG",
+    "I2C_SCL_STOP_HOLD_REG",
+    "I2C_SCL_STOP_SETUP_REG",
+    "I2C_SCL_FILTER_CFG_REG",
+    "I2C_SDA_FILTER_CFG_REG",
+    "I2C_COMD0_REG",
+    "I2C_COMD1_REG",
+    "I2C_COMD2_REG",
+    "I2C_COMD3_REG",
+    "I2C_COMD4_REG",
+    "I2C_COMD5_REG",
+    "I2C_COMD6_REG",
+    "I2C_COMD7_REG",
+    "I2C_COMD8_REG",
+    "I2C_COMD9_REG",
+    "I2C_COMD10_REG",
+    "I2C_COMD11_REG",
+    "I2C_COMD12_REG",
+    "I2C_COMD13_REG",
+    "I2C_COMD14_REG",
+    "I2C_COMD15_REG"    
+};
 
-unsigned int apb_data[128];
-
-
-//        qemu_irq_raise(s->irq);
-//        qemu_irq_lower(s->irq);
-
-void esp32_i2c_fifo_dataSet(int offset,unsigned int data) {
-    if (offset<128)
-       apb_data[offset]=data;
-}
 
 
 #define ESP32_I2C(obj) \
@@ -111,6 +140,27 @@ typedef struct Esp32I2CState {
     int out;
     int in;
 } Esp32I2CState;
+
+
+// TODO, Let the esp32_i2c driver own the apb data
+
+unsigned int data_offset=0;
+
+unsigned int apb_data[128];
+
+
+//        qemu_irq_raise(s->irq);
+//        qemu_irq_lower(s->irq);
+
+void esp32_i2c_fifo_dataSet(int offset,unsigned int data) {
+    //if (offset==0) 
+    {
+        apb_data[data_offset++]=data;
+    }
+    //if (offset<128)
+    //   apb_data[offset]=data;
+}
+
 
 // The interrupt is dynamically allocated by writing to DPORT_PRO_I2C_EXT0_INTR_MAP_REG
 qemu_irq irq;
@@ -197,7 +247,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
                             if (opcode==0) {
                                 // cmd restart
-                                unsigned int address = apb_data[buffer_ix] ;
+                                unsigned int address = (apb_data[buffer_ix] >> 1);
 
                                 //address = 0x78;
                                 unsigned int send = apb_data[buffer_ix] & 0x01;
@@ -223,6 +273,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                        "%s: i2c_send 0x%x\n", __func__, (int)apb_data[buffer_ix-1]);
 
                                 }
+                                data_offset=0;
                             }
 
                             if (opcode==2) {
@@ -313,9 +364,11 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
          }
          break;
+    case I2C_INT_ENA_REG:
+         break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: Offset 0x%x\n", __func__, (int)offset);
+                      "%s: %s Offset/4 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset/4);
     }
 }
 
