@@ -38,6 +38,15 @@ enum ssd1306_mode
     SSD1306_CMD
 };
 
+enum ssd1306_adressing_mode
+{
+    SSD1306_HORIZONTAL=0,
+    SSD1306_VERTICAL,
+    SSD1306_PAGE,
+    SSD1306_INVALID
+};
+
+
 enum ssd1306_cmd {
     SSD1306_CMD_NONE,
     SSD1306_CMD_SKIP1,
@@ -60,8 +69,9 @@ typedef struct {
     int inverse;
     int redraw;
     enum ssd1306_mode mode;
+    enum ssd1306_adressing_mode  adressing_mode;
     enum ssd1306_cmd cmd_state;
-    uint8_t framebuffer[128*64];
+    uint8_t framebuffer[132*64];
 } ssd1306_state;
 
 static int ssd1306_recv(I2CSlave *i2c)
@@ -90,9 +100,25 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
         break;
     case SSD1306_DATA:
         DPRINTF("data 0x%02x\n", data);
-        //if (s->col < 132) {
-            s->framebuffer[s->col + s->row * 132] = data;
+        int offset=0;
+        if (s->adressing_mode==SSD1306_PAGE) {
+            offset=s->col + s->row * 128;
+            s->row++;
+            if (s->row>7) {
+                s->col++;
+                s->row=0;
+            }
+        } else if (s->adressing_mode==SSD1306_HORIZONTAL) {
+            offset=s->col + s->row * 128;
+            s->framebuffer[offset] = data;
             s->col++;
+            if (s->col>128) {
+                s->row++;
+                s->col=0;
+            }
+        }
+
+        //if (s->col < 132) {
             s->redraw = 1;
         //}
         //if (s->col>=128) {
@@ -110,10 +136,14 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             s->mode = SSD1306_IDLE;
             switch (data) {
             case 0x00 ... 0x0f: /* Set lower column address.  */
-                s->col = (s->col & 0xf0) | (data & 0xf);
+                if ( s->adressing_mode==SSD1306_PAGE) {
+                    s->col = (s->col & 0xf0) | (data & 0xf);
+                }
                 break;
             case 0x10 ... 0x1f: /* Set higher column address.  */
-                s->col = (s->col & 0x0f) | ((data & 0xf) << 4);
+                if ( s->adressing_mode==SSD1306_PAGE) {
+                    s->col = (s->col & 0x0f) | ((data & 0xf) << 4);
+                }
                 break;
             case 0x20:
                 // Adressing mode,
@@ -123,26 +153,31 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                     switch (data & 0x03) 
                     {
                         case 0:
-                            DPRINTF("1306 mode Horizontal\n", data & 0x03);
+                            DPRINTF("1306 page adressing mode Horizontal\n");
                             break;
                         case 1:
-                            DPRINTF("1306 mode Vertical\n", data & 0x03);
+                            DPRINTF("1306 page adressing mode Vertical\n");
                             break;
+                        case 2:
+                            DPRINTF("1306 page adressing mode\n");
+                            break;
+          
                     }
+                    s->adressing_mode=data & 0x03;
                 }
-                s->cmd_state = SSD1306_CMD_SKIP1;
+                //s->cmd_state = SSD1306_CMD_SKIP1;
                 break;
             case 0x21:
                 // Column Address ,
                 { 
-                   DPRINTF("1306 Column Address 0x%02x\n", data );
+                   DPRINTF("1306 Column addressing 0x%02x\n", data );
                    s->cmd_state = SSD1306_CMD_SKIP2;
                 }
                 break;
             case 0x22:
                 // Page Address ,
                 { 
-                   DPRINTF("1306 Column Address 0x%02x\n", data );
+                   DPRINTF("1306 Page addressing 0x%02x\n", data );
                    s->cmd_state = SSD1306_CMD_SKIP2;
                 }
                 break;
@@ -188,7 +223,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             case 0xb0 ... 0xbf: /* Set Page address.  */
                 DPRINTF("1306 Set Page address 0x%02x\n", data );
                 s->row = data & 7;
-                s->col=0;
+                //s->col=0;
                 break;
             case 0xc0 ... 0xc8: /* Set COM output direction (Ignored).  */
                 break;
@@ -266,11 +301,6 @@ static void ssd1306_update_display(void *opaque)
     int dest_width;
     uint8_t mask;
 
-    //for(x=0;x<200;x++)
-    //{
-    //  s->framebuffer[x]=x;
-    //}
-
     if (!s->redraw)
         return;
 
@@ -309,7 +339,7 @@ static void ssd1306_update_display(void *opaque)
     dest = surface_data(surface);
     for (y = 0; y < 64; y++) {
         line = (y + s->start_line) & 63;
-        src = s->framebuffer + 132 * (line >> 3) + 36;
+        src = s->framebuffer + 127 * (line >> 3) + 36;
         mask = 1 << (line & 7);
         for (x = 0; x < 128; x++) {
             memcpy(dest, colors[(*src & mask) != 0], dest_width);
@@ -363,6 +393,7 @@ static int ssd1306_init(I2CSlave *i2c)
 
     s->col=0;
     s->row=0;
+    s->adressing_mode=SSD1306_PAGE;
 
     s->con = graphic_console_init(DEVICE(i2c), 0, &ssd1306_ops, s);
     qemu_console_resize(s->con, 128 * MAGNIFY, 64 * MAGNIFY);
