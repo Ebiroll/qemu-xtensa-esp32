@@ -3,7 +3,7 @@
     "command": "make",
     "isShellCommand": true,
     "options": {
-         "cwd": "${workspaceRoot}/../build-qesp32"
+         "cwd": "${workspaceRoot}/../qemu_esp32"
      },
     "tasks": [
         {

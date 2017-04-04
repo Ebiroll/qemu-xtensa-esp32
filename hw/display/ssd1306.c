@@ -93,7 +93,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             s->col++;
             s->redraw = 1;
         //}
-        if (s->col>128) {
+        if (s->col>=128) {
             s->col=0;
             s->row++;
         }
