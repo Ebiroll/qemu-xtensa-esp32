@@ -78,6 +78,8 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
     switch (s->mode) {
     case SSD1306_IDLE:
         DPRINTF("ssd1306 byte 0x%02x\n", data);
+        if (data == 0x00)
+            s->mode = SSD1306_CMD;
         if (data == 0x80)
             s->mode = SSD1306_CMD;
         else if (data == 0x40)
@@ -93,10 +95,10 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             s->col++;
             s->redraw = 1;
         //}
-        if (s->col>=128) {
-            s->col=0;
-            s->row++;
-        }
+        //if (s->col>=128) {
+        //    s->col=0;
+        //    s->row++;
+        //}
         break;
     case SSD1306_CMD:
         old_cmd_state = s->cmd_state;
@@ -108,10 +110,10 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             s->mode = SSD1306_IDLE;
             switch (data) {
             case 0x00 ... 0x0f: /* Set lower column address.  */
-                //s->col = (s->col & 0xf0) | (data & 0xf);
+                s->col = (s->col & 0xf0) | (data & 0xf);
                 break;
             case 0x10 ... 0x1f: /* Set higher column address.  */
-                //s->col = (s->col & 0x0f) | ((data & 0xf) << 4);
+                s->col = (s->col & 0x0f) | ((data & 0xf) << 4);
                 break;
             case 0x20:
                 // Adressing mode,
@@ -186,6 +188,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             case 0xb0 ... 0xbf: /* Set Page address.  */
                 DPRINTF("1306 Set Page address 0x%02x\n", data );
                 s->row = data & 7;
+                s->col=0;
                 break;
             case 0xc0 ... 0xc8: /* Set COM output direction (Ignored).  */
                 break;
@@ -210,7 +213,8 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             case 0xe3: /* no-op.  */
                 break;
             default:
-                BADF("Unknown command: 0x%x\n", data);
+                break;
+                //BADF("Unknown command: 0x%x\n", data);
             }
             }
 

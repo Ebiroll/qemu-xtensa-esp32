@@ -29,7 +29,7 @@
 #define BIT(nr)                 (1UL << (nr))
 
 
-#define  I2C_TXFIFO_EMPTY_INT_ST_M  BIT(1)
+#define  I2C_TXFIFO_EMPTY_INT  BIT(1)
 #define  I2C_TRANS_COMPLETE_INT  BIT(7)
 #define  I2C_TRANS_START_INT  (BIT(9))
 
@@ -245,8 +245,8 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     Esp32I2CState *s = (Esp32I2CState *)opaque;
     unsigned long u32_value=value & 0xffff;
 
-    qemu_log_mask(LOG_GUEST_ERROR,
-                    "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+    //qemu_log_mask(LOG_GUEST_ERROR,
+    //                "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
 
 
     switch (offset/4) {
@@ -269,62 +269,68 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                 //        "%s: start transmit 0x%x\n", __func__, s->num_out);   
                 int buffer_ix=0;
                 int data_ix;
+                bool start_transfer=false;
+
                 for (ix=0;ix<s->num_out;ix++) {
                             char opcode= (s->command_reg[ix] & 0x3800) >> 11;
                             char len=(s->command_reg[ix] & 0xf);
                             //qemu_log_mask(LOG_GUEST_ERROR,
-                            //"%s:OPCODE 0x%x\n" , __func__,opcode);
+                            //   "%s: execute OPCODE 0x%x\n" , __func__,opcode);
+
 
                             // Set command done
                             s->command_reg[ix]=s->command_reg[ix]  | 0x8000;
 
 
                             if (opcode==0) {
+
+                                start_transfer=true;
                                 // cmd restart
-                                unsigned int address = (apb_data[buffer_ix] >> 1);
-
-                                //address = 0x78;
-                                unsigned int send = apb_data[buffer_ix] & 0x01;
-                                buffer_ix++;
-                                //if (send==1) send=0; else send=1;
-
-                                qemu_log_mask(LOG_GUEST_ERROR,
-                                              "%s: start transfer adress --------- 0x%x s=%x\n", __func__, (int)address,send);
-
-
-                                if (i2c_start_transfer(s->bus,address,send)==0) 
-                                {
-                                    s->i2c_sr_reg=s->i2c_sr_reg | 0x01;
-                                }
-                                else
-                                {
-
-                                }
 
                                 // Transaction start interrupt
                                 s->int_status=I2C_TRANS_START_INT;
                                 qemu_irq_raise(irq);
-  
-
                             //qemu_log_mask(LOG_GUEST_ERROR,
                             //   "%s:i2c_start_transfer 0x%x\n" , __func__,apb_data[buffer_ix-1]);
 
                             }
 
                             if (opcode==1) {
+                                if (start_transfer) {
+                                    start_transfer=false;
+                                     unsigned int address = (apb_data[buffer_ix] >> 1);
+                                    //address = 0x78;
+                                    unsigned int send = apb_data[buffer_ix] & 0x01;
+                                    buffer_ix++;
+                                    //if (send==1) send=0; else send=1;
 
-                                for (data_ix=0;data_ix<len;data_ix++) {
-                                    //if (data_offset<buffer_ix) {
+                                    qemu_log_mask(LOG_GUEST_ERROR,
+                                                "%s: start transfer adress --------- 0x%x s=%x\n", __func__, (int)address,send);
+
+
+                                    // Not NULL response should indicate missing
+                                    if (i2c_start_transfer(s->bus,address,send)==0) 
+                                    {
+                                        s->i2c_sr_reg=s->i2c_sr_reg | 0x01;
+                                    }
+                                    else
+                                    {
+
+                                    }
+                                } else {
+                                    for (data_ix=0;data_ix<len;data_ix++) {
+                                        //if (data_offset>buffer_ix) {
+                                        //        qemu_log_mask(LOG_GUEST_ERROR,
+                                        //        "%s: ERROR not enough data for i2c_send 0x%x next %x\n", __func__, (int)apb_data[buffer_ix],apb_data[buffer_ix+1]);
+                                        //
+                                        //}
                                         i2c_send(s->bus,apb_data[buffer_ix++]);
                                             qemu_log_mask(LOG_GUEST_ERROR,
-                                            "%s: i2c_send 0x%x next %x\n", __func__, (int)apb_data[buffer_ix-1],apb_data[buffer_ix]);
-                                    //} else {
-                                            //clear_fifo=false;
-                                    //        qemu_log_mask(LOG_GUEST_ERROR,
-                                    //        "%s: ERROR not enough data for i2c_send 0x%x next %x\n", __func__, (int)apb_data[buffer_ix-1],apb_data[buffer_ix]);
-                                    //    
-                                    //}
+                                            "%s: i2c_send ---- 0x%x ---- next %x\n", __func__, (int)apb_data[buffer_ix-1],apb_data[buffer_ix]); 
+                                     }
 
+                                    s->int_status=I2C_TXFIFO_EMPTY_INT;
+                                    qemu_irq_raise(irq);                                     
                                 }
 
                                 data_offset=0;
