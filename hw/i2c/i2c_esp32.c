@@ -333,12 +333,12 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                 for (ix=0;ix<s->num_out;ix++) {
                             char opcode= (s->command_reg[ix] & 0x3800) >> 11;
                             char len=(s->command_reg[ix] & 0xf);
-                            //qemu_log_mask(LOG_GUEST_ERROR,
-                            //   "%s: execute OPCODE 0x%x\n" , __func__,opcode);
+                            qemu_log_mask(LOG_GUEST_ERROR,
+                               "%s: execute OPCODE 0x%x\n" , __func__,opcode);
 
 
                             // Set command done
-                            s->command_reg[ix]=s->command_reg[ix]  | 0x8000;
+                            s->command_reg[ix]=(s->command_reg[ix]  | I2C_COMMAND0_DONE);
 
 
                             if (opcode==0) {
@@ -423,6 +423,9 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             if (opcode==3) {
                                 // stop               
                                 i2c_end_transfer(s->bus);
+                                qemu_log_mask(LOG_GUEST_ERROR,
+                                    "%s: end transfer ------------------ \n", __func__);
+
                                 s->i2c_int_raw=I2C_MASTER_TRAN_COMP_INT_RAW;
                                 if (I2C_MASTER_TRAN_COMP_INT_ENA==(s->i2c_int_ena & I2C_MASTER_TRAN_COMP_INT_ENA)) {                                
                                     s->int_status=I2C_TRANS_COMPLETE_INT;
@@ -437,6 +440,8 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                     qemu_irq_raise(irq);
                                 }
                             }
+                            // Set length to 0
+                            s->command_reg[ix] = (s->command_reg[ix] & 0xfff0);
 
                 }
                 s->num_out=0;
