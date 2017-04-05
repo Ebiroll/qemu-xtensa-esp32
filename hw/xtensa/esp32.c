@@ -2091,7 +2091,7 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
 
     // 0x01301c
     if (addr>=0x01301c && addr<=0x01311c) {        
-        fprintf(stderr,"i2c apb write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+        //fprintf(stderr,"i2c apb write %" PRIx64 ",%" PRIx64 " \n",addr,val);
         esp32_i2c_fifo_dataSet((addr-0x01301c)/4,val);
     }
 
