@@ -118,13 +118,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             }
         }
 
-        //if (s->col < 132) {
-            s->redraw = 1;
-        //}
-        //if (s->col>=128) {
-        //    s->col=0;
-        //    s->row++;
-        //}
+        s->redraw = 1;
         break;
     case SSD1306_CMD:
         old_cmd_state = s->cmd_state;
@@ -190,11 +184,11 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 break;
             case 0xa0: /* was Mirror off.  */
                 DPRINTF("1306 segment map 0x%02x\n", data );
-                s->mirror = 0;
+                //s->mirror = 0;
                 break;
-            case 0xa1: /* was Mirror off.  */
+            case 0xa1: /* was Mirror on.  */
                 DPRINTF("1306 segment remap 0x%02x\n", data );
-                s->mirror = 1;
+                //s->mirror = 1;
                 break;
             case 0xa4: /* Entire display off.  */
                 s->flash = 0;

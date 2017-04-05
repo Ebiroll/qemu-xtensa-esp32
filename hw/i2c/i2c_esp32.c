@@ -28,6 +28,18 @@
 
 #define BIT(nr)                 (1UL << (nr))
 
+#define I2C_COMMAND0_DONE  (BIT(31))
+
+#define I2C_NONFIFO_EN  (BIT(10))
+
+
+#define I2C_TRANS_START_INT_ENA  (BIT(9))
+#define I2C_TX_SEND_EMPTY_INT_ENA  (BIT(12))
+#define I2C_MASTER_TRAN_COMP_INT_ENA  (BIT(6))
+
+
+#define I2C_MASTER_TRAN_COMP_INT_RAW  (BIT(6))
+
 
 #define  I2C_TXFIFO_EMPTY_INT  BIT(1)
 #define  I2C_TRANS_COMPLETE_INT  BIT(7)
@@ -134,6 +146,13 @@ typedef struct Esp32I2CState {
     I2CBus   *bus;
     unsigned int command_reg[16];
     unsigned int  i2c_ctr_reg;
+    unsigned int  i2c_int_ena;
+    unsigned int  i2c_int_raw;
+
+    // To handle Aurdino driver, this will be set
+    unsigned int  use_localfifo;
+
+
     unsigned int  i2c_sr_reg;
     unsigned int  i2c_fifo_conf_reg;
 
@@ -151,11 +170,13 @@ unsigned int data_offset=0;
 
 unsigned int apb_data[128];
 
+unsigned int  use_localfifo;
 
 //        qemu_irq_raise(s->irq);
 //        qemu_irq_lower(s->irq);
 
 void esp32_i2c_fifo_dataSet(int offset,unsigned int data) {
+    use_localfifo=0;
     //if (offset==0) 
     {
         apb_data[data_offset++]=data;
@@ -170,6 +191,9 @@ qemu_irq irq;
 
 void esp32_i2c_interruptSet(qemu_irq new_irq) 
 {
+    qemu_log_mask(LOG_GUEST_ERROR,
+                "%s: new IRQ val 0x%x\n", __func__, (int)new_irq);
+
     irq=new_irq;
 }
 
@@ -191,9 +215,17 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
              //return(s->i2c_sr_reg);
              return(-1);
              break;
+        case I2C_INT_ENA_REG:
+             return(s->i2c_int_ena);
+             break;
+
         //Arduino driver
         case I2C_INT_RAW_REG:
-             return(0);
+             {
+                 int tmp=s->i2c_int_raw;
+                 s->i2c_int_raw=0;
+                 return(tmp);
+             }
              break;
         case I2C_INT_STATUS_REG:
 
@@ -219,8 +251,9 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
             return(s->i2c_ctr_reg);
             break;
 
+        // Arduino driver uses only 3 commands
         case I2C_COMD2_REG:
-            return(0);
+            return(I2C_COMMAND0_DONE);
             break;
 
         case I2C_COMD0_REG:
@@ -255,8 +288,8 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     Esp32I2CState *s = (Esp32I2CState *)opaque;
     unsigned long u32_value=value & 0xffff;
 
-    qemu_log_mask(LOG_GUEST_ERROR,
-                    "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+    //qemu_log_mask(LOG_GUEST_ERROR,
+    //                "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
 
 
     switch (offset/4) {
@@ -264,16 +297,22 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     // Used by arduino driver
     case I2C_SCL_UNUSED1:
         {
+            use_localfifo=1;
             apb_data[data_offset++]=value;
 
-            qemu_log_mask(LOG_GUEST_ERROR,
-                            "%s: %s DATA!! 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+            //qemu_log_mask(LOG_GUEST_ERROR,
+            //                "%s: %s DATA!! 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
         }
         break;
 
     case I2C_SR_REG:
         s->i2c_sr_reg=value;
         break;
+
+    case I2C_INT_ENA_REG:
+            s->i2c_int_ena=value;
+            break;
+
 
     case I2C_INT_CLR_REG:
          s->int_status=0;
@@ -308,8 +347,14 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                 // cmd restart
 
                                 // Transaction start interrupt
-                                s->int_status=I2C_TRANS_START_INT;
-                                qemu_irq_raise(irq);
+                                if (I2C_TRANS_START_INT_ENA==(s->i2c_int_ena & I2C_TRANS_START_INT_ENA)) 
+                                {
+                                    s->int_status=I2C_TRANS_START_INT;
+                                    qemu_irq_raise(irq);
+                                } else {
+                                    // For arduino driver
+                                    start_transfer=true;
+                                }
                             //qemu_log_mask(LOG_GUEST_ERROR,
                             //   "%s:i2c_start_transfer 0x%x\n" , __func__,apb_data[buffer_ix-1]);
 
@@ -317,7 +362,6 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
                             if (opcode==1) {
                                 if (start_transfer) {
-                                    start_transfer=false;
                                      unsigned int address = (apb_data[buffer_ix] >> 1);
                                     //address = 0x78;
                                     unsigned int send = apb_data[buffer_ix] & 0x01;
@@ -337,7 +381,12 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                     {
 
                                     }
-                                } else {
+                                }
+                                
+                                // Ugly workaround,
+                                // use_localfifo is for aurdrino driver
+                                // esp-idf driver must send to fifo from IRQ before we can send it
+                                if (!start_transfer || (use_localfifo==1)){
                                     for (data_ix=0;data_ix<len;data_ix++) {
                                         //if (data_offset>buffer_ix) {
                                         //        qemu_log_mask(LOG_GUEST_ERROR,
@@ -349,10 +398,14 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                             "%s: i2c_send ---- 0x%x ---- next %x\n", __func__, (int)apb_data[buffer_ix-1],apb_data[buffer_ix]); 
                                      }
 
-                                    s->int_status=I2C_TXFIFO_EMPTY_INT;
-                                    qemu_irq_raise(irq);                                     
+                                    if (I2C_TX_SEND_EMPTY_INT_ENA==(s->i2c_int_ena & I2C_TX_SEND_EMPTY_INT_ENA)) 
+                                    {
+                                        s->int_status=I2C_TXFIFO_EMPTY_INT;
+                                        qemu_irq_raise(irq);                                     
+                                    }
                                 }
-
+                                // Transfer should be done by now
+                                start_transfer=false;
                                 data_offset=0;
                             }
 
@@ -370,14 +423,19 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             if (opcode==3) {
                                 // stop               
                                 i2c_end_transfer(s->bus);
-                                s->int_status=I2C_TRANS_COMPLETE_INT;
-                                qemu_irq_raise(irq);
-
+                                s->i2c_int_raw=I2C_MASTER_TRAN_COMP_INT_RAW;
+                                if (I2C_MASTER_TRAN_COMP_INT_ENA==(s->i2c_int_ena & I2C_MASTER_TRAN_COMP_INT_ENA)) {                                
+                                    s->int_status=I2C_TRANS_COMPLETE_INT;
+                                    qemu_irq_raise(irq);
+                                }
                             }
 
                             if (opcode==4) {
-                                s->int_status=I2C_TRANS_COMPLETE_INT;
-                                qemu_irq_raise(irq);
+                                s->i2c_int_raw=I2C_MASTER_TRAN_COMP_INT_RAW;
+                                if (I2C_MASTER_TRAN_COMP_INT_ENA==(s->i2c_int_ena & I2C_MASTER_TRAN_COMP_INT_ENA)) {                                
+                                    s->int_status=I2C_TRANS_COMPLETE_INT;
+                                    qemu_irq_raise(irq);
+                                }
                             }
 
                 }
@@ -405,6 +463,14 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                 //        "%s: I2C_FIFO_CONF_REG  RESET TX FIFO 0x%x\n", __func__, (int)value & 0xffff);
                 // Intentionally ignore this buffer clear as we will be one transmission behind most of the times
                 //data_offset=0;
+            }
+
+            if ((u32_value & I2C_NONFIFO_EN) == I2C_NONFIFO_EN) {
+                 //qemu_log_mask(LOG_GUEST_ERROR,
+                 //       "%s: I2C_NONFIFO_EN \n", __func__);                
+            } else {
+                 //qemu_log_mask(LOG_GUEST_ERROR,
+                 //       "%s: I2C_NONFIFO_EN FALSE \n", __func__);                
             }
 
             if ((u32_value & BIT(12)) == BIT(12)) {
@@ -463,8 +529,6 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
          }
          break;
-    case I2C_INT_ENA_REG:
-         break;
     default:
     break;
         //qemu_log_mask(LOG_GUEST_ERROR,
@@ -484,6 +548,7 @@ static void esp32_i2c_init(Object *obj)
     Esp32I2CState *s = ESP32_I2C(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
+    s->use_localfifo=0;
     s->i2c_ctr_reg=0;
     s->i2c_sr_reg=0xffff;
 
