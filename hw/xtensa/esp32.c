@@ -2431,17 +2431,58 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                     system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
-
+#if 0
+ // 0x60013000
+ // 0x60027000
     // OLED & tempsensor , on i2c0
     if (true) {  // 0x40020000
         // qdev_get_gpio_in(nvic, 8)
-        // I2c0
-        dev = sysbus_create_simple(TYPE_ESP32_I2C, 0x3FF53000 , NULL);
+        // I2c0 =  0x3FF53000
+        dev = sysbus_create_simple(TYPE_ESP32_I2C,  0x60013000 , NULL);
         i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
         if (true) {
             i2c_create_slave(i2c, "ssd1306", 0x3c);
             //i2c_create_slave(i2c, "ssd1306", 0x02);
-            i2c_create_slave(i2c, "tmpbme280", 0x77);
+            //i2c_create_slave(i2c, "tmpbme280", 0x77);
+        }
+    }
+    // OLED & tempsensor , on i2c0
+    if (true) {  // 0x40020000
+        // qdev_get_gpio_in(nvic, 8)
+        // I2c0 =  0x3FF53000
+        dev = sysbus_create_simple(TYPE_ESP32_I2C,  0x60027000 , NULL);
+        i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
+        if (true) {
+            i2c_create_slave(i2c, "ssd1306", 0x3c);
+            //i2c_create_slave(i2c, "ssd1306", 0x02);
+            //i2c_create_slave(i2c, "tmpbme280", 0x77);
+        }
+    }
+
+
+
+    // OLED & tempsensor , on i2c0
+    if (true) {  // 0x40020000
+        // qdev_get_gpio_in(nvic, 8)
+        // I2c0 =  0x3FF53000
+        dev = sysbus_create_simple(TYPE_ESP32_I2C,  0x3FF67000 , NULL);
+        i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
+        if (true) {
+            i2c_create_slave(i2c, "ssd1306", 0x3c);
+            //i2c_create_slave(i2c, "ssd1306", 0x02);
+            //i2c_create_slave(i2c, "tmpbme280", 0x77);
+        }
+    }
+#endif
+    if (true) {  // 0x40020000
+        // qdev_get_gpio_in(nvic, 8)
+        // I2c0 =  
+        dev = sysbus_create_simple(TYPE_ESP32_I2C,  0x3FF53000 , NULL);
+        i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
+        if (true) {
+            i2c_create_slave(i2c, "ssd1306", 0x3c);
+            //i2c_create_slave(i2c, "ssd1306", 0x02);
+            //i2c_create_slave(i2c, "tmpbme280", 0x77);
         }
     }
 

@@ -179,6 +179,9 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
 {
     Esp32I2CState *s = (Esp32I2CState *)opaque;
 
+    //qemu_log_mask(LOG_GUEST_ERROR,
+    //                "%s: %s regnum 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset);
+
 
     switch (offset/4) {
         case I2C_FIFO_CONF_REG:
@@ -188,7 +191,10 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
              //return(s->i2c_sr_reg);
              return(-1);
              break;
-        
+        //Arduino driver
+        case I2C_INT_RAW_REG:
+             return(0);
+             break;
         case I2C_INT_STATUS_REG:
 
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -213,9 +219,13 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
             return(s->i2c_ctr_reg);
             break;
 
+        case I2C_COMD2_REG:
+            return(0);
+            break;
+
         case I2C_COMD0_REG:
         case I2C_COMD1_REG:
-        case I2C_COMD2_REG:
+        //case I2C_COMD2_REG:
         case I2C_COMD3_REG:
         case I2C_COMD4_REG:
         case I2C_COMD5_REG:
@@ -245,12 +255,22 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     Esp32I2CState *s = (Esp32I2CState *)opaque;
     unsigned long u32_value=value & 0xffff;
 
-    //qemu_log_mask(LOG_GUEST_ERROR,
-    //                "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+    qemu_log_mask(LOG_GUEST_ERROR,
+                    "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
 
 
     switch (offset/4) {
         
+    // Used by arduino driver
+    case I2C_SCL_UNUSED1:
+        {
+            apb_data[data_offset++]=value;
+
+            qemu_log_mask(LOG_GUEST_ERROR,
+                            "%s: %s DATA!! 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+        }
+        break;
+
     case I2C_SR_REG:
         s->i2c_sr_reg=value;
         break;
