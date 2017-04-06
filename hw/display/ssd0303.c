@@ -76,7 +76,9 @@ static int ssd0303_send(I2CSlave *i2c, uint8_t data)
     switch (s->mode) {
     case SSD0303_IDLE:
         DPRINTF("byte 0x%02x\n", data);
-        if (data == 0x80)
+        if (data == 0x00)
+            s->mode = SSD0303_CMD;
+        else if (data == 0x80)
             s->mode = SSD0303_CMD;
         else if (data == 0x40)
             s->mode = SSD0303_DATA;

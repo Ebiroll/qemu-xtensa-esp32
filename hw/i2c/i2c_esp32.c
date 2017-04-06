@@ -386,6 +386,12 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                 // use_localfifo is for aurdrino driver
                                 // esp-idf driver must send to fifo from IRQ before we can send it
                                 if (!start_transfer || (use_localfifo==1)){
+                                    if (start_transfer) {
+                                        // i2c start transfer has already consumed 1 byte...
+                                        if (len>0) {
+                                            len--;
+                                        }
+                                    }
                                     for (data_ix=0;data_ix<len;data_ix++) {
                                         //if (data_offset>buffer_ix) {
                                         //        qemu_log_mask(LOG_GUEST_ERROR,
@@ -524,7 +530,10 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
             // Assume commands are filled in sequencially
             if (s->num_out<=1+(offset-I2C_COMD0_REG*4)/4)
             {
-                s->num_out=1+(offset-I2C_COMD0_REG*4)/4;
+                // Arduino driver zeroes all
+                if (value!=0) {
+                   s->num_out=1+(offset-I2C_COMD0_REG*4)/4;
+                }
             } 
 
             s->command_reg[(offset-(I2C_COMD0_REG*4))/4]=value& 0xffff;
