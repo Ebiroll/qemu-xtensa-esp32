@@ -56,6 +56,8 @@ enum ssd1306_cmd {
 #define TYPE_SSD1306 "ssd1306"
 #define SSD1306(obj) OBJECT_CHECK(ssd1306_state, (obj), TYPE_SSD1306)
 
+#define MAX_FRAMEBUFF (132*64)
+
 typedef struct {
     I2CSlave parent_obj;
 
@@ -71,7 +73,7 @@ typedef struct {
     enum ssd1306_mode mode;
     enum ssd1306_adressing_mode  adressing_mode;
     enum ssd1306_cmd cmd_state;
-    uint8_t framebuffer[132*64];
+    uint8_t framebuffer[MAX_FRAMEBUFF];
 } ssd1306_state;
 
 static int ssd1306_recv(I2CSlave *i2c)
@@ -88,8 +90,8 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
     switch (s->mode) {
     case SSD1306_IDLE:
         DPRINTF("ssd1306 byte 0x%02x\n", data);
-        if (data == 0x00)
-            s->mode = SSD1306_CMD;
+        //if (data == 0x00)
+        //    s->mode = SSD1306_CMD;
         if (data == 0x80)
             s->mode = SSD1306_CMD;
         else if (data == 0x40)
@@ -103,6 +105,9 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
         int offset=0;
         if (s->adressing_mode==SSD1306_PAGE) {
             offset=s->col + s->row * 128;
+            if (offset < MAX_FRAMEBUFF) {
+                s->framebuffer[offset] = data;
+            }
             s->row++;
             if (s->row>7) {
                 s->col++;
@@ -110,7 +115,9 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             }
         } else if (s->adressing_mode==SSD1306_HORIZONTAL) {
             offset=s->col + s->row * 128;
-            s->framebuffer[offset] = data;
+            if (offset < MAX_FRAMEBUFF) {
+                s->framebuffer[offset] = data;
+            }
             s->col++;
             if (s->col>128) {
                 s->row++;
@@ -157,22 +164,23 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                             break;
           
                     }
+                    // Arduino driver insert spurious data
                     s->adressing_mode=data & 0x03;
                 }
-                //s->cmd_state = SSD1306_CMD_SKIP1;
+                s->cmd_state = SSD1306_CMD_SKIP1;
                 break;
             case 0x21:
                 // Column Address ,
                 { 
                    DPRINTF("1306 Column addressing 0x%02x\n", data );
-                   s->cmd_state = SSD1306_CMD_SKIP2;
+                   s->cmd_state = SSD1306_CMD_SKIP1;
                 }
                 break;
             case 0x22:
                 // Page Address ,
                 { 
                    DPRINTF("1306 Page addressing 0x%02x\n", data );
-                   s->cmd_state = SSD1306_CMD_SKIP2;
+                   s->cmd_state = SSD1306_CMD_SKIP1;
                 }
                 break;
 
