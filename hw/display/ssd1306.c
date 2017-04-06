@@ -103,17 +103,17 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
     case SSD1306_DATA:
         DPRINTF("data 0x%02x\n", data);
         int offset=0;
-        if (s->adressing_mode==SSD1306_PAGE) {
-            offset=s->col + s->row * 128;
-            if (offset < MAX_FRAMEBUFF) {
-                s->framebuffer[offset] = data;
-            }
-            s->row++;
-            if (s->row>7) {
-                s->col++;
-                s->row=0;
-            }
-        } else if (s->adressing_mode==SSD1306_HORIZONTAL) {
+        //if (s->adressing_mode==SSD1306_PAGE) {
+        //    offset=s->col + s->row * 128;
+        //    if (offset < MAX_FRAMEBUFF) {
+        //        s->framebuffer[offset] = data;
+        //    }
+        //    s->row++;
+        //    if (s->row>7) {
+        //        s->col++;
+        //        s->row=0;
+        //    }
+        //} else if (s->adressing_mode==SSD1306_HORIZONTAL) {
             offset=s->col + s->row * 128;
             if (offset < MAX_FRAMEBUFF) {
                 s->framebuffer[offset] = data;
@@ -123,7 +123,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 s->row++;
                 s->col=0;
             }
-        }
+        //}
 
         s->redraw = 1;
         break;
