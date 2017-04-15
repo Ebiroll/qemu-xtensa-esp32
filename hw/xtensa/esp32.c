@@ -76,6 +76,8 @@ extern const unsigned char* get_flashMemory();
 
 typedef struct Esp32 {
     XtensaCPU *cpu[2];
+    qemu_irq pro_to_app_yield_irq;
+    qemu_irq app_to_pro_yield_irq;
 } Esp32;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -1578,6 +1580,8 @@ static void esp_io_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
 
+Esp32 *esp32=(Esp32 *) opaque;
+
 /* Flash MMU table for PRO CPU */
 //#define DPORT_PRO_FLASH_MMU_TABLE ((volatile uint32_t*) 0x3FF10000)
 
@@ -1715,6 +1719,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
            }
            break;
 
+
         case 0x10000:
            {
               printf(" MMU CACHE  3ff10000  %" PRIx64 "\n" ,val);
@@ -1730,6 +1735,8 @@ if (addr>=0x12000 && addr<0x13ffc) {
            printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058\n");
            sim_DPORT_APP_CACHE_CTRL_REG=val;
            break;
+
+
 
         case 0x5F0:
             // TODO!! CHECK IF UNUSED, Just unpatches the rom patches
@@ -1785,6 +1792,43 @@ if (addr>=0x12000 && addr<0x13ffc) {
            printf("EMAC_CLK_EN_REG %" PRIx64 "\n" ,val);
            // REG_SET_BIT(EMAC_CLK_EN_REG, EMAC_CLK_EN); 
            break;
+
+
+           case 0xE0:
+              printf(" DPORT_CPU_INTR_FROM_CPU_1_REG  3ff000E0  %" PRIx64 "\n" ,val);
+              if (val==0) {
+                   qemu_irq_lower(esp32->app_to_pro_yield_irq);
+              } else {
+                 qemu_irq_raise(esp32->app_to_pro_yield_irq);
+              }
+
+           case 0xDC:
+              printf(" DPORT_CPU_INTR_FROM_CPU_0_REG  3ff000DC  %" PRIx64 "\n" ,val);
+              if (val==0) {
+                   qemu_irq_lower(esp32->pro_to_app_yield_irq);
+              } else {
+                 qemu_irq_raise(esp32->pro_to_app_yield_irq);
+              }
+           break;
+
+
+      case  0x164:
+          printf("DPORT_PRO_CPU_INTR_FROM_CPU_0_MAP_REG %" PRIx64 "\n" ,val);
+          esp32->pro_to_app_yield_irq=PROcpu->env.irq_inputs[val];
+
+          break;
+
+      case  0x168:
+          printf("DPORT_PRO_CPU_INTR_FROM_CPU_1_MAP_REG %" PRIx64 "\n" ,val);
+          // ?esp32->app_to_pro_yield_irq=APPcpu->env.irq_inputs[val];
+
+          break;
+
+     case  0x27C:
+          printf("DPORT_APP_CPU_INTR_FROM_CPU_1_MAP_REG %" PRIx64 "\n" ,val);
+          esp32->app_to_pro_yield_irq=APPcpu->env.irq_inputs[val];
+          break;
+
 
        case 0x1c8:
            printf("DPORT_PRO_I2C_EXT0_INTR_MAP_REG %" PRIx64 "\n" ,val);   
@@ -2310,7 +2354,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // dram0 3ffc0000 
 
     system_io = g_malloc(sizeof(*system_io));
-    memory_region_init_io(system_io, NULL, &esp_io_ops, NULL, "esp32.io",
+    memory_region_init_io(system_io, NULL, &esp_io_ops, esp32, "esp32.io",
                           0x80000);
 
     memory_region_add_subregion(system_memory, 0x3ff00000, system_io);
