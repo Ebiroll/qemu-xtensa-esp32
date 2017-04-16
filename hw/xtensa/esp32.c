@@ -655,6 +655,7 @@ typedef struct Esp32SpiState {
     qemu_irq irq;
     void *flash_image;
     int length;
+    int wren;
 
     uint32_t reg[R_MAX];
 } Esp32SpiState;
@@ -694,7 +695,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
             DEBUG_LOG("esp32_spi_cmd_erase??? %08x\n",val);
             unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
 
-    // Set all in sector to 0xff
+        // Set all in sector to 0xff
         memset(s->flash_image + write_addr,
             0xff,  
             0x1000);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
@@ -721,6 +722,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
         // Not sure this is a good idea??
         // Where is length field?
         DEBUG_LOG("len %d\n",s->length);
+        s->wren=1;
 
         //memcpy(s->flash_image + write_addr,
         //    &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
@@ -746,6 +748,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
        if (command==0x03) {
            DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
            // TODO, ignore bit 0-7 !!!
+           s->wren=0;
            unsigned int silly=ESP32_SPI_GET(s, ADDR, OFFSET) >> 8;
            DEBUG_LOG("Silly %08X\n",silly);
 
@@ -873,6 +876,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
        int length=1+(addr-0x80)/4;
 
        //if (addr==0x80)
+       if (true /*s->wren==1*/)
        {
          s->reg[addr / 4] = val;
          //unsigned int *set=(uint32_t)s->flash_image + (uint32_t)silly +(uint32_t)(addr-0x80);
@@ -882,13 +886,22 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
              return;
          }
 
+         // Only clear 1:s not possible to set a 0 to 1
+         // However does not work. :-P
+         unsigned int *data=(unsigned int *)(s->flash_image + write_addr + length);
+         unsigned int test=*data;
+          test = ~test;
+         unsigned int in_data=val;
 
+         DEBUG_LOG("------SPI 0 data written 0x%08x v=0x%08x now=0x%08x 0x%08x\n",length,val,*data,test & in_data);     
+         *data= test & in_data;
+
+         // We trust that data will be stored correctly
          memcpy(s->flash_image + write_addr,
             &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
-            length);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+            length*4);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 
 
-         DEBUG_LOG("SPI 0 data written 0x%08x\n",length);     
 
        }
 
@@ -910,6 +923,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
 
 
          DEBUG_LOG("SPI data written 0x%08x\n",write_addr);     
+         s->wren=0;
 
        }
 
