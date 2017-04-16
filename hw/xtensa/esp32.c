@@ -582,6 +582,9 @@ SPI_DATE_REG=0x3fc/4,  // 3fc
 R_MAX = 0x100
 };
 
+// Redefing for SPI flash 
+#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
+
 
 #define ESP32_SPI_FLASH_BITS(reg, field, shift, len) \
     DEFINE_BITS(ESP32_SPI_FLASH, reg, field, shift, len)
@@ -719,9 +722,9 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
         // Where is length field?
         DEBUG_LOG("len %d\n",s->length);
 
-        memcpy(s->flash_image + write_addr,
-            &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
-            4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+        //memcpy(s->flash_image + write_addr,
+        //    &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+        //    4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 
         s->reg[ESP32_SPI_FLASH_STATUS] |= ESP32_SPI_FLASH_STATUS_WRENABLE;
     }
@@ -869,6 +872,27 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
 #endif    
        int length=1+(addr-0x80)/4;
 
+       //if (addr==0x80)
+       {
+         s->reg[addr / 4] = val;
+         //unsigned int *set=(uint32_t)s->flash_image + (uint32_t)silly +(uint32_t)(addr-0x80);
+         //*set=val;
+         // Memory mapped file
+         if (s->spiNum!=0) {
+             return;
+         }
+
+
+         memcpy(s->flash_image + write_addr,
+            &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+            length);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+
+         DEBUG_LOG("SPI 0 data written 0x%08x\n",length);     
+
+       }
+
+
        if (addr==0x9c)
        {
          s->reg[addr / 4] = val;
@@ -884,10 +908,12 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
             &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
             4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 
+
+         DEBUG_LOG("SPI data written 0x%08x\n",write_addr);     
+
        }
 
        
-       //DEBUG_LOG("SPI data 0x%08x\n",val);     
     }
 
 
