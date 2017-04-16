@@ -76,6 +76,7 @@ extern const unsigned char* get_flashMemory();
 
 typedef struct Esp32 {
     XtensaCPU *cpu[2];
+    unsigned int gpio_reg[600/4]; 
     qemu_irq pro_to_app_yield_irq;
     qemu_irq app_to_pro_yield_irq;
 } Esp32;
@@ -89,13 +90,14 @@ typedef struct connect_data {
 } connect_data;
 
 qemu_irq uart0_irq;
+qemu_irq uart1_irq;
 
 void *connection_handler(void *connect);
 void *gdb_socket_thread(void *dummy);
 
 
-//#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
-#define DEBUG_LOG(...) {}
+#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
+//#define DEBUG_LOG(...) {}
 
 #define DEFINE_BITS(prefix, reg, field, shift, len) \
     prefix##_##reg##_##field##_SHIFT = shift, \
@@ -160,6 +162,8 @@ typedef struct Esp32SerialState {
     unsigned rx_last;
     uint8_t rx[ESP32_UART_FIFO_SIZE];
     uint32_t reg[ESP32_UART_MAX];
+    QEMUTimer *timeout_timer;
+    uint32_t   start_timeout;
 
     // These are used to interact with the socket thread
     int  uart_num;
@@ -187,15 +191,20 @@ static bool esp32_serial_can_receive(void *opaque)
     return esp32_serial_rx_fifo_size(s) < (ESP32_UART_FIFO_SIZE - 1);
 }
 
+
+// b uart_rx_intr_handler_default
 static void esp32_serial_irq_update(Esp32SerialState *s)
 {
     s->reg[ESP32_UART_INT_ST] |= s->reg[ESP32_UART_INT_RAW];
     //fprintf(stderr,"CHECKING IRQ\n");
 
-    if (s->uart_num==0 || (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA])) {
+    if (s->uart_num==0 || s->uart_num==1 || (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA])) {
         //fprintf(stderr,"RAISING IRQ\n");
         if (s->uart_num==0) {
            qemu_irq_raise(uart0_irq);
+        }
+        else if (s->uart_num==1) {
+           qemu_irq_raise(uart1_irq);
         }
         else
         {
@@ -205,11 +214,18 @@ static void esp32_serial_irq_update(Esp32SerialState *s)
         if (s->uart_num==0) {
            qemu_irq_lower(uart0_irq);
         }
+        else if (s->uart_num==1) {
+           qemu_irq_lower(uart1_irq);
+        }
+
         else
         {
            qemu_irq_lower(s->irq);
         }
     }
+
+    // Clear timeout
+    s->reg[ESP32_UART_INT_RAW] = s->reg[ESP32_UART_INT_RAW]  & ~BIT(8);
 }
 
 static void esp32_serial_rx_irq_update(Esp32SerialState *s)
@@ -240,7 +256,25 @@ static uint64_t esp32_serial_read(void *opaque, hwaddr addr,
     //}
 
     switch (addr / 4) {
+        case ESP32_UART_INT_ST:
+        {
+            if (s->uart_num==0) {
+              qemu_irq_lower(uart0_irq);
+            }
+            else if (s->uart_num==1) {
+              qemu_irq_lower(uart1_irq);
+            }
+            else
+            {
+              qemu_irq_lower(s->irq);
+            }
+           return s->reg[ESP32_UART_INT_ST];
+
+        }
+
+
     case ESP32_UART_STATUS:
+        DEBUG_LOG("%s: ESP32_UART_STATUS +0x%02x: \n", __func__, (uint32_t)addr);
         // return 0;
         // TODO!! TODO!! Make read interrupt work for UARRTS!
         return esp32_serial_rx_fifo_size(s);
@@ -249,22 +283,25 @@ static uint64_t esp32_serial_read(void *opaque, hwaddr addr,
         //fprintf(stderr,"siz %u\n",esp32_serial_rx_fifo_size(s));
         if (esp32_serial_rx_fifo_size(s)) {
             uint8_t r = s->rx[s->rx_first++];
-            //fprintf(stderr,"%c\n",(char)r);
+            //fprintf(stderr,"-->%c\n",(char)r);
 
             s->rx_first &= ESP32_UART_FIFO_MASK;
             esp32_serial_rx_irq_update(s);
             return r;
         } else {
+            //fprintf(stderr,"-->NULL\n");
             return 0;
         }
+
+    case ESP32_UART_CONF1:
+        DEBUG_LOG("%s: ESP32_UART_CONF1 +0x%02x: \n", __func__, (uint32_t)addr);
+
     case ESP32_UART_INT_RAW:
-    case ESP32_UART_INT_ST:
     case ESP32_UART_INT_ENA:
     case ESP32_UART_INT_CLR:
     case ESP32_UART_CLKDIV:
     case ESP32_UART_AUTOBAUD:
     case ESP32_UART_CONF0:
-    case ESP32_UART_CONF1:
     case ESP32_UART_LOWPULSE:
     case ESP32_UART_HIGHPULSE:
     case ESP32_UART_RXD_CNT:
@@ -284,7 +321,7 @@ static void esp32_serial_receive(void *opaque, const uint8_t *buf, int size)
 {
     Esp32SerialState *s = opaque;
     unsigned i;
-    fprintf(stderr,"UART socket received %s,%d first%d last%d\n",buf,size,s->rx_first,s->rx_last);
+    //fprintf(stderr,"UART socket received %s,%d first=%d last=%d\n",buf,size,s->rx_first,s->rx_last);
 
     for (i = 0; i < size && esp32_serial_can_receive(s); ++i) {
         s->rx[s->rx_last++] = buf[i];
@@ -344,6 +381,45 @@ static void esp32_serial_set_conf0(Esp32SerialState *s, hwaddr addr,
     }
 }
 
+static void esp_serial_timeout_cb(void *opaque)
+{
+  Esp32SerialState *s = opaque;
+  int64_t now=qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+  DEBUG_LOG("%s: SERIAL_TIMEOUT  +0x%PRIx6402x:  \n", __func__, now);
+
+  if (now-s->start_timeout > 1000000) {
+      // 1 second timeout irq
+      DEBUG_LOG("%s: SERIAL_TIMEOUT  +0x%PRIx6402x:  \n", __func__, now);
+      s->reg[ESP32_UART_INT_RAW] |= BIT(8);
+      esp32_serial_rx_irq_update(s);
+  }
+
+}
+
+
+static void esp32_serial_set_conf1(Esp32SerialState *s, hwaddr addr,
+                                     uint64_t val, unsigned size)
+{
+     DEBUG_LOG("%s: +0x%02x:  \n", __func__, (uint32_t)val);
+
+    s->reg[ESP32_UART_CONF1] = val & 0xffffff;
+    if (s->reg[ESP32_UART_CONF1] && BIT(31)==BIT(31)) {
+
+        DEBUG_LOG("%s: TIMEOUT +0x%02x:  \n", __func__, (uint32_t)val);
+
+       s->start_timeout=qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+       s->timeout_timer=timer_new_ns(QEMU_CLOCK_REALTIME, &esp_serial_timeout_cb, s);
+
+        
+    }
+
+    //if (ESP32_UART_GET(s, CONF1, RXFIFO_RST)) {
+    //    s->rx_first = s->rx_last = 0;
+    //    esp32_serial_rx_irq_update(s);
+    //}
+}
+
+
 static void esp32_serial_write(void *opaque, hwaddr addr,
                                  uint64_t val, unsigned size)
 {
@@ -375,6 +451,7 @@ static void esp32_serial_write(void *opaque, hwaddr addr,
         [ESP32_UART_INT_CLR] = esp32_serial_int_clr,
         [ESP32_UART_STATUS] = esp32_serial_ro,
         [ESP32_UART_CONF0] = esp32_serial_set_conf0,
+        [ESP32_UART_CONF1] = esp32_serial_set_conf1,
         [ESP32_UART_LOWPULSE] = esp32_serial_ro,
         [ESP32_UART_HIGHPULSE] = esp32_serial_ro,
         [ESP32_UART_RXD_CNT] = esp32_serial_ro,
@@ -967,7 +1044,10 @@ void *connection_handler(void *connect)
 
         if (gdb_serial[uart_num]) {
             if (read_size>0)  {
-                esp32_serial_receive(gdb_serial[0],(unsigned char *)client_message,read_size);
+                // Fake a timeout
+                gdb_serial[uart_num]->reg[ESP32_UART_INT_RAW] |= BIT(8);
+
+                esp32_serial_receive(gdb_serial[uart_num],(unsigned char *)client_message,read_size);
                 printf("%s",client_message);
             }
         }
@@ -1340,6 +1420,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         unsigned size)
 {
 
+    Esp32 *esp32=(Esp32 *) opaque;
 
     if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
@@ -1354,6 +1435,9 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         {
             // Bootlader already did this, it should be safe to map this, app expects it
             mapFlashToMem(0x8000, 0x3f408000,0x10000-0x8000);
+
+            //mapFlashToMem(0x10000 + 0x7000, 0x3f407000,0x10000-0x7000);
+
             // TODO!! Only works for factory app
             //mapFlashToMem(2*0x10000, 0x3f400000,0x10000);  
             nv_init_called=true;
@@ -1362,8 +1446,45 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         return(app_MMU_REG[addr/4-0x12000/4]);
     }
 
+// Exception in i2c_set_pin
 
+//0x4010ccce in i2c_set_pin (i2c_num=<optimized out>, sda_io_num=GPIO_NUM_21, scl_io_num=GPIO_NUM_22,
+//    sda_pullup_en=GPIO_PULLUP_ENABLE, scl_pullup_en=GPIO_PULLUP_ENABLE, mode=I2C_MODE_MASTER)
+//    at /home/olof/esp/esp-idf/components/driver/./i2c.c:631
 
+/* No crash here
+Because nvs_flash_init(); was not called....
+#0  i2c_set_pin (i2c_num=I2C_NUM_0, sda_io_num=1073413760, scl_io_num=GPIO_NUM_1, sda_pullup_en=GPIO_PULLUP_ENABLE, 
+    scl_pullup_en=(unknown: 1073429864), mode=I2C_MODE_MASTER) at /home/olof/esp/esp-idf/components/driver/./i2c.c:601
+
+ */
+//             gpio_set_level(sda_io_num, I2C_IO_INIT_LEVEL);                                                            │
+//             PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[sda_io_num], PIN_FUNC_GPIO);     
+//
+// 0x4010ccc9 <i2c_set_pin+381>    call8  0x4010c054 <gpio_set_level>                                                        │
+//   0x4010cccc <i2c_set_pin+384>    l32i.n a8, a1, 16 
+//       a1=   0x3ffb81c0
+//       a8 becomes 0xffffffff                                           
+//   0x4010ccce <i2c_set_pin+386>    memw 
+//   Access memory 0xffffffff                                                                                     │
+//   0x4010ccd1 <i2c_set_pin+389>    l32i.n a9, a8, 0                                   
+//
+//
+// PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[sda_io_num], PIN_FUNC_GPIO);
+// p &GPIO_PIN_MUX_REG
+// $14 = (const uint32_t (*)[40]) 0x3f40809c <GPIO_PIN_MUX_REG>
+     // gpio
+     if (addr>=0x44000 && addr<0x445cc) {
+        unsigned int gpio_num=(addr-0x44000)/4;
+        if (addr==0x44038) {
+           printf("GPIO_STRAP_REG 3ff44038=0x13\n");
+           // boot_sel_chip[5:0]: MTDI, GPIO0, GPIO2, GPIO4, MTDO, GPIO5
+           //                             1                    1     1
+           return 0x13;
+        }
+        return(esp32->gpio_reg[gpio_num]);
+
+     }
 
     switch (addr) {
 
@@ -1450,12 +1571,6 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return 0x0;
            break;
            
-        case 0x44038:
-           printf("GPIO_STRAP_REG 3ff44038=0x13\n");
-           // boot_sel_chip[5:0]: MTDI, GPIO0, GPIO2, GPIO4, MTDO, GPIO5
-           //                             1                    1     1
-           return 0x13;
-           break;
         
         case 0x47004:
             //  READ_PERI_REG(FRC_TIMER_COUNT_REG(0));
@@ -1582,6 +1697,19 @@ static void esp_io_write(void *opaque, hwaddr addr,
 
 Esp32 *esp32=(Esp32 *) opaque;
 
+    // To handle i2c_set_pin
+    if (addr>=0x44000 && addr<0x445cc) {
+        unsigned int gpio_num=(addr-0x44000)/4;
+        if (addr==0x44038) {
+            printf("WRITE GPIO_STRAP_REG 3ff44038=0x13\n");
+            // boot_sel_chip[5:0]: MTDI, GPIO0, GPIO2, GPIO4, MTDO, GPIO5
+            //                             1                    1     1
+        }
+       esp32->gpio_reg[gpio_num]=val;
+
+    }
+
+
 /* Flash MMU table for PRO CPU */
 //#define DPORT_PRO_FLASH_MMU_TABLE ((volatile uint32_t*) 0x3FF10000)
 
@@ -1627,7 +1755,8 @@ if (addr>=0x10000 && addr<0x11ffc) {
                 //mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
                 // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000 
                 if (val!=0x100) {
-                    mapFlashToMem(val*0x10000 + 0x7000, 0x3f407000,0x10000-0x7000); 
+                //    mapFlashToMem(val*0x10000 + 0x7000, 0x3f407000,0x10000-0x7000);
+                    mapFlashToMem(val*0x10000 + 0x8000, 0x3f407000,0x10000-0x8000); 
                 }
             }
       }
@@ -1668,7 +1797,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
 
 
-    if ( addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
+    if (  addr==0x5f060 || addr==0x5f064 || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
      ||  (addr>=0x69440 && addr<=0x6947c) || addr==0x44008  || addr==0x4400c
     )  {
         // Cache MMU table?
@@ -1838,6 +1967,11 @@ if (addr>=0x12000 && addr<0x13ffc) {
        case 0x18c:
            printf("DPORT_PRO_UART_INTR_MAP_REG %" PRIx64 "\n" ,val);  
            uart0_irq=PROcpu->env.irq_inputs[(int)val];
+           break;
+
+       case 0x190:
+           printf("DPORT_PRO_UART1_INTR_MAP_REG %" PRIx64 "\n" ,val);  
+           uart1_irq=PROcpu->env.irq_inputs[(int)val];
            break;
 
         case 0x48000:
@@ -2122,9 +2256,9 @@ rom_i2c_reg block 0x67 reg 0x6 57
     return 0x0;
 }
 
-extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
+//extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
 
-extern void esp32_i2c_interruptSet(qemu_irq new_irq);
+//extern void esp32_i2c_interruptSet(qemu_irq new_irq);
 
 
 static void esp_wifi_write(void *opaque, hwaddr addr,
@@ -2226,7 +2360,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
 
 
-    MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem;
+    MemoryRegion *gpio,*ram,*ram1, *rom, *system_io, *ulp_slowmem;
     static MemoryRegion *wifi_io;
 
     DriveInfo *dinfo;
@@ -2243,6 +2377,10 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     pthread_t pgdb_socket_thread;
     int q;
         
+
+    // Force load of flash memory
+    //const unsigned char* tmp=get_flashMemory();
+
     printf("esp32_init\n");
     for (q=0;q<3;q++) {
         if( pthread_create( &pgdb_socket_thread , NULL ,  gdb_socket_thread , (void*) q) < 0)
@@ -2291,7 +2429,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     app_MMU_REG[0]=2;
     //pro_MMU_REG[50]=4;
     // This requires a valid flash image, but is safe to do berfore elf-load
-    mapFlashToMem(0x0000, 0x3f400000,0x10000);
+    //mapFlashToMem(2*0x10000, 0x3f400000,0x10000);
+
 
     pro_MMU_REG[77]=4;
     app_MMU_REG[77]=4;
@@ -2300,6 +2439,18 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //app_MMU_REG[79]=6;
     //pro_MMU_REG[79]=6;
 
+
+
+    //0x200000
+    // This is undocumented
+    /*
+    gpio = g_malloc(sizeof(*gpio)); 
+     memory_region_init_ram(gpio, NULL, "gpio", 0x6000,  // 00000
+                           &error_abort);
+
+    vmstate_register_ram_global(gpio); // 0x20000
+    memory_region_add_subregion(system_memory, 0x20000, gpio);
+    */
 
     // Map all as ram 
     ram = g_malloc(sizeof(*ram));
@@ -2530,8 +2681,25 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
         }
     }
 
+    // Check do_global_ctors
+    // Should be safe before load elf. 
+    // We must not overwrite these.. 
+    /*
+ 
+    (gdb) p &__init_array_start
+    $3 = (void (**)(void)) 0x3f409fb8
+    (gdb) p &__init_array_end  
+    $4 = (void (**)(void)) 0x3f409fbc
 
-
+    static void do_global_ctors(void)                                                                                 │
+     {                                                                                                                 │
+         void (**p)(void);                                                                                             │
+         for (p = &__init_array_end - 1; p >= &__init_array_start; --p) {                                              │
+              (*p)();                                                                                                   │
+    }
+    */                                    
+    //mapFlashToMem(2*0x10000, 0x3f400000,0x10000);
+    mapFlashToMem(0*0x10000, 0x3f400000,0x10000);
 
 
     /* Use kernel file name as current elf to load and run */
