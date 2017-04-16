@@ -24,11 +24,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */ 
-// wifi ... 0x6000e0c4=0xffffffff
-// 0x6000e04c
-// 0x6000607c
-// set *((int *) 0x6000e0c4)=-1
-
 
 #if 0
 ULP memory
@@ -96,8 +91,8 @@ void *connection_handler(void *connect);
 void *gdb_socket_thread(void *dummy);
 
 
-#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
-//#define DEBUG_LOG(...) {}
+//#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
+#define DEBUG_LOG(...) {}
 
 #define DEFINE_BITS(prefix, reg, field, shift, len) \
     prefix##_##reg##_##field##_SHIFT = shift, \
@@ -348,7 +343,7 @@ static void esp32_serial_tx(Esp32SerialState *s, hwaddr addr,
             esp32_serial_receive(s, buf, 1);
         }
 
-    } else if (true /*s->chr*/) {
+    } else if (s->chr) {
         uint8_t buf[1] = { val };
         qemu_chr_fe_write(s->chr, buf, 1);
 
@@ -392,7 +387,9 @@ static void esp_serial_timeout_cb(void *opaque)
       DEBUG_LOG("%s: SERIAL_TIMEOUT  +0x%PRIx6402x:  \n", __func__, now);
       s->reg[ESP32_UART_INT_RAW] |= BIT(8);
       esp32_serial_rx_irq_update(s);
+      s->start_timeout=now;
   }
+  //timer_mod_ns(s->timeout_timer,1000000000000);
 
 }
 
@@ -409,7 +406,7 @@ static void esp32_serial_set_conf1(Esp32SerialState *s, hwaddr addr,
 
        s->start_timeout=qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
        s->timeout_timer=timer_new_ns(QEMU_CLOCK_REALTIME, &esp_serial_timeout_cb, s);
-
+       timer_mod_ns(s->timeout_timer,1000000000);
         
     }
 

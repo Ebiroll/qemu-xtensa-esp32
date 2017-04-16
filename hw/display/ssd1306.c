@@ -119,7 +119,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 s->framebuffer[offset] = data;
             }
             s->col++;
-            if (s->col>128) {
+            if (s->col>127) {
                 s->row++;
                 s->col=0;
             }
@@ -137,14 +137,18 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             s->mode = SSD1306_IDLE;
             switch (data) {
             case 0x00 ... 0x0f: /* Set lower column address.  */
-                if ( s->adressing_mode==SSD1306_PAGE) {
+                //if ( s->adressing_mode==SSD1306_PAGE) {
                     s->col = (s->col & 0xf0) | (data & 0xf);
-                }
+                    DPRINTF("1306 col 0x%02x\n", s->col);
+
+                //}
                 break;
             case 0x10 ... 0x1f: /* Set higher column address.  */
-                if ( s->adressing_mode==SSD1306_PAGE) {
+                //if ( s->adressing_mode==SSD1306_PAGE) {
                     s->col = (s->col & 0x0f) | ((data & 0xf) << 4);
-                }
+                    DPRINTF("1306 col 0x%02x\n", s->col);
+
+                //}
                 break;
             case 0x20:
                 // Adressing mode,
@@ -341,7 +345,7 @@ static void ssd1306_update_display(void *opaque)
     dest = surface_data(surface);
     for (y = 0; y < 64; y++) {
         line = (y + s->start_line) & 63;
-        src = s->framebuffer + 127 * (line >> 3) + 36;
+        src = s->framebuffer + 128 * (line >> 3) ;
         mask = 1 << (line & 7);
         for (x = 0; x < 128; x++) {
             memcpy(dest, colors[(*src & mask) != 0], dest_width);
@@ -395,6 +399,7 @@ static int ssd1306_init(I2CSlave *i2c)
 
     s->col=0;
     s->row=0;
+    s->start_line=0;
     s->adressing_mode=SSD1306_PAGE;
 
     s->con = graphic_console_init(DEVICE(i2c), 0, &ssd1306_ops, s);
