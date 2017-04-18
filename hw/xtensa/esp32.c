@@ -1479,7 +1479,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         if (addr==0x123fc)
         {
             // Bootlader already did this, it should be safe to map this, app expects it
-            mapFlashToMem(0x8000, 0x3f408000,0x10000-0x8000);
+            mapFlashToMem(0x9000, 0x3f409000,0x10000-0x9000);
 
             //mapFlashToMem(0x10000 + 0x7000, 0x3f407000,0x10000-0x7000);
 
@@ -1797,11 +1797,15 @@ if (addr>=0x10000 && addr<0x11ffc) {
                 // Data is located and used at 0x3f400000  0x3f404000 ???
                 // Try this for bootloader
                 // TO TEST BOOTLOADER UNCOMMENT THIS ---->
-                //mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
-                // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000 
+                // mapFlashToMem(val*0x10000, 0x3f400000,0x10000);  
+                // for application.. flash.rodata is would be overwritten if mapped on 0x3f400000
+                // 0x3f400000
+
+                // This is outside the partition information. This must bew resolved.
+                // We cannot allow application to use   0x3f400000
                 if (val!=0x100) {
                 //    mapFlashToMem(val*0x10000 + 0x7000, 0x3f407000,0x10000-0x7000);
-                    mapFlashToMem(val*0x10000 + 0x8000, 0x3f407000,0x10000-0x8000); 
+                    mapFlashToMem(val*0x10000 + 0x9000, 0x3f409000,0x10000-0x9000); 
                 }
             }
       }
@@ -2379,6 +2383,29 @@ static const MemoryRegionOps esp_wifi_ops = {
 };
 
 
+static uint64_t esp_iomux_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+       printf("iomux read %" PRIx64 " \n",addr);
+
+}
+
+
+static void esp_iomux_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+       printf("iomux write %" PRIx64 " \n",addr);
+
+
+} 
+
+static const MemoryRegionOps esp_iomux_ops = {
+    .read = esp_iomux_read,
+    .write = esp_iomux_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+
+
 
 // MMU not setup? Or maybe cpu_get_phys_page_debug returns wrong adress.
 // We try this mapping instead to get us started
@@ -2403,7 +2430,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     DeviceState *dev;
     I2CBus *i2c;
 
-
+    MemoryRegion *iomux;
 
     MemoryRegion *gpio,*ram,*ram1, *rom, *system_io, *ulp_slowmem;
     static MemoryRegion *wifi_io;
@@ -2548,6 +2575,17 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // sram1 -- 0x400B_0000 ~ 0x400B_7FFF
 
     // dram0 3ffc0000 
+
+//0x3ff49000
+
+
+
+    iomux = g_malloc(sizeof(*iomux));
+    memory_region_init_io(iomux, NULL, &esp_iomux_ops, esp32, "esp32.iomux",
+                          0x3ff61000-0x3ff49000);
+
+    memory_region_add_subregion(system_memory, 0x3ff49000, iomux);
+
 
     system_io = g_malloc(sizeof(*system_io));
     memory_region_init_io(system_io, NULL, &esp_io_ops, esp32, "esp32.io",
