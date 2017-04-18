@@ -1834,7 +1834,10 @@ if (addr>=0x10000 && addr<0x11ffc) {
    }
 
 
-    pro_MMU_REG[addr/4-0x10000/4]=val;
+    // Do not allow new values to pro_MMU_REG[0] its mapped to flash.rodata
+    if (addr!=0x10000) {
+        pro_MMU_REG[addr/4-0x10000/4]=val;
+    }
     if (val!=0 && val!=0x100) {
        fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
@@ -2504,10 +2507,10 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //mapFlashToMem(2*0x10000, 0x3f400000,0x10000);
 
 
-    pro_MMU_REG[77]=4;
-    app_MMU_REG[77]=4;
-    pro_MMU_REG[78]=5;
-    app_MMU_REG[78]=5;
+    //pro_MMU_REG[77]=4;
+    //app_MMU_REG[77]=4;
+    //pro_MMU_REG[78]=5;
+    //app_MMU_REG[78]=5;
     //app_MMU_REG[79]=6;
     //pro_MMU_REG[79]=6;
 
