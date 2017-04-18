@@ -690,6 +690,12 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     if (s->spiNum!=0) {
         return;
     }
+    //  WRITE_PERI_REG(PERIPHS_SPI_FLASH_CMD, SPI_FLASH_PP);
+    // TODO,              WRITE_PERI_REG(PERIPHS_SPI_FLASH_CMD, SPI_FLASH_PP);
+    // Results in 0      esp32_spi_write: +0x00 = 0x02000000
+    // This should be when data is written to the flash file
+    // Information is available in spi_flash_rom_patch.c
+
 
     if (val & 0x1000000) {
             DEBUG_LOG("esp32_spi_cmd_erase??? %08x\n",val);
@@ -720,7 +726,9 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
         DEBUG_LOG("status wren\n");
         unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
         // Not sure this is a good idea??
-        // Where is length field?
+        // Where is length field?  ESP32_MISO_DLEN
+        //    REG_WRITE(SPI_MISO_DLEN_REG(1),  ((ESP_ROM_SPIFLASH_BUFF_BYTE_READ_NUM << 3) - 1) << SPI_USR_MISO_DBITLEN_S);
+        // 0 esp32_spi_write: +0x2c = 0x000001ff    32 bytes
         DEBUG_LOG("len %d\n",s->length);
         s->wren=1;
 
