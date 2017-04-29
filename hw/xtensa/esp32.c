@@ -1639,6 +1639,11 @@ Because nvs_flash_init(); was not called....
            printf("SENS_SAR_MEAS_START1_REG,3ff48854 =ffffffff\n");        
            return 0xffffffff;
            break;
+            // rtc_clk_xtal_freq_get TODO investigate further
+       case 0x480b0:
+           printf("RTC_XTAL_FREQ_REG 3ff480b0=%08X\n",0xf04ff04ff);
+           return 0x04ff04ff;
+           break;
 
        case 0x480b4:
            printf("RTC_CNTL_STORE5_REG 3ff480b4=%08X\n",sim_RTC_CNTL_STORE5_REG);
