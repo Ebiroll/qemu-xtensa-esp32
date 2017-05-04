@@ -2422,6 +2422,14 @@ static uint64_t translate_esp32_address(void *opaque, uint64_t addr)
     return addr;
 }
 
+typedef struct {
+    uint32_t device_id;
+    uint32_t chip_size;    // chip size in bytes
+    uint32_t block_size;
+    uint32_t sector_size;
+    uint32_t page_size;
+    uint32_t status_mask;
+} esp_rom_spiflash_chip_t;
 
 
 static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
@@ -2952,6 +2960,8 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
             }
 
 
+
+
 #if 1
 
             // Patching rom function. ets_unpack_flash_code
@@ -3022,6 +3032,15 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
             // Overwrite rom interrupt function
             //cpu_physical_memory_write(0x400003c0, rfde, sizeof(rfde));
+
+           // This does not work... overwritten by ROM???
+           //PROVIDE ( g_rom_flashchip = 0x3ffae270 );
+            esp_rom_spiflash_chip_t g_rom_flashchip;
+            g_rom_flashchip.device_id=0x10;
+            g_rom_flashchip.chip_size=4*1024*1024; //0x3E8000;   // 4M?
+            cpu_physical_memory_write(0x3ffae270,&g_rom_flashchip,sizeof(g_rom_flashchip));
+
+
 #endif
         }
     } else {
