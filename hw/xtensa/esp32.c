@@ -643,7 +643,7 @@ enum {
 };
 
 enum {
-    ESP32_SPI_FLASH_BITS(ADDR, ADDR_VALUE, 0, 24),
+    ESP32_SPI_FLASH_BITS(ADDR, ADDR_VALUE, 0, 31),
     ESP32_SPI_FLASH_BITS(ADDR, ADDR_RESERVED, 24,8),
 };
 
@@ -757,10 +757,12 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
            DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
            // TODO, ignore bit 0-7 !!!
            s->wren=0;
-           unsigned int silly=ESP32_SPI_GET(s, ADDR, OFFSET) >> 8;
+           // ESP32_SPI_GET(s, ADDR, OFFSET)
+           unsigned int silly= s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
            DEBUG_LOG("Silly %08X\n",silly);
-
-/*
+ /*           0x111f00 00
+            001111f0
+            
             unsigned int *data1=(unsigned int *)s->flash_image +silly;
             int q=0;
             for(q=0;q<16;q++) 
