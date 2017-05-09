@@ -687,9 +687,6 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     //DEBUG_LOG("esp32_spi_cmd %08x\n",val);
     //s->reg[addr / 4] = val;
 
-    if (s->spiNum!=0) {
-        return;
-    }
     //  WRITE_PERI_REG(PERIPHS_SPI_FLASH_CMD, SPI_FLASH_PP);
     // TODO,              WRITE_PERI_REG(PERIPHS_SPI_FLASH_CMD, SPI_FLASH_PP);
     // Results in 0      esp32_spi_write: +0x00 = 0x02000000
@@ -700,8 +697,14 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     if (val & 0x1000000) {
             DEBUG_LOG("esp32_spi_cmd_erase??? %08x\n",val);
             unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+            //write_addr=s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
 
-        // Set all in sector to 0xff
+        // Only allow spi0 to write to flash
+        if (s->spiNum!=0) {
+            return;
+        }
+
+
         memset(s->flash_image + write_addr,
             0xff,  
             0x1000);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
@@ -868,6 +871,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
 
     if (addr>=0x80 && addr <= 0x9c) {
        unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+       //write_addr=s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
 
 #if 0
        int offset=(addr-0x80);
@@ -984,8 +988,10 @@ static Esp32SpiState *esp32_spi_init(int spinum,MemoryRegion *address_space,
     memory_region_init_io(&s->iomem, NULL, &esp32_spi_ops, s,
                           name, 0x100);
 
+//if (spinum==0) {
     s->flash_image=get_flashMemory();
     *flash_image=s->flash_image;
+//}
     //int *test=(int *)s->flash_image;
     //*test=0xdead;
 
@@ -2713,8 +2719,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     }
 
-
-spi = esp32_spi_init(1,system_io, 0x64000, "esp32.spi1",
+    
+spi = esp32_spi_init(2,system_io, 0x64000, "esp32.spi2",
                     system_memory, /*cache*/ 0x800000, "esp32.flash",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
@@ -2723,9 +2729,11 @@ spi = esp32_spi_init(0,system_io, 0x43000, "esp32.spi0",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
 
+// Shoud be #1 but that creates problems
 spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                     system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
+
 
 #if 0
  // 0x60013000
