@@ -1724,7 +1724,24 @@ Because nvs_flash_init(); was not called....
         case 0x6a014:
             printf("EMAC_GMACGMIIDATA_REG");
             return 0x2000;
+           break;      
+
+           // See       esp_dport_access_stall_other_cpu_start           
+        case 0xb5408:
+            printf("dport_access_start[0]");
+            return 0x1;
            break;                       
+
+        case 0xb540c:
+            printf("dport_access_start[1]");
+            return 0x1;
+           break;                       
+
+        case 0xb5410:
+            printf("dport_access_start[2]");
+            return 0x1;
+           break;                       
+
 
        default:
           {
@@ -1995,6 +2012,26 @@ if (addr>=0x12000 && addr<0x13ffc) {
               } else {
                  qemu_irq_raise(esp32->app_to_pro_yield_irq);
               }
+              break;  
+
+           case 0xE4:
+              printf(" DPORT_CPU_INTR_FROM_CPU_2_REG  3ff000E4  %" PRIx64 "\n" ,val);
+              if (val==0) {
+                   qemu_irq_lower(esp32->app_to_pro_yield_irq);
+              } else {
+                 qemu_irq_raise(esp32->app_to_pro_yield_irq);
+              }
+              break;
+
+           case 0xE8:
+              printf(" DPORT_CPU_INTR_FROM_CPU_3_REG  3ff000E8  %" PRIx64 "\n" ,val);
+              if (val==0) {
+                   qemu_irq_lower(esp32->pro_to_app_yield_irq);
+              } else {
+                 qemu_irq_raise(esp32->pro_to_app_yield_irq);
+              }
+              break;  
+
 
            case 0xDC:
               printf(" DPORT_CPU_INTR_FROM_CPU_0_REG  3ff000DC  %" PRIx64 "\n" ,val);
