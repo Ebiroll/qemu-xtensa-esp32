@@ -1874,6 +1874,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x10024) {
                 mapFlashToMem(val*0x10000, 0x3f490000,0x10000);
         }
+/*
         if (addr==0x10028) {
                 mapFlashToMem(val*0x10000, 0x3f4a0000,0x10000);
         }
@@ -1889,14 +1890,14 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x10038) {
                 mapFlashToMem(val*0x10000, 0x3f4e0000,0x10000);
         }
-
+*/
    }
 
 
     // Do not allow new values to pro_MMU_REG[0] its mapped to flash.rodata
-        // OLAS? if (addr!=0x10000) {
-        pro_MMU_REG[addr/4-0x10000/4]=val;
-        //OLAS? }
+         //if (addr!=0x10000) {
+          pro_MMU_REG[addr/4-0x10000/4]=val;
+          //}
     if (val!=0 && val!=0x100) {
        fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
@@ -1911,7 +1912,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
     if (  addr==0x5f060 || addr==0x5f064 || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
      ||  (addr>=0x69440 && addr<=0x6947c) || addr==0x44008  || addr==0x4400c
     )  {
-        // Cache MMU table?
+        // Less info
     } else {
        if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
     }
