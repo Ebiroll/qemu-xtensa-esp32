@@ -3039,7 +3039,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
 
 
-#if 1
+#if 0
 
             // Patching rom function. ets_unpack_flash_code
             //      j forward 0x13 
@@ -3112,15 +3112,55 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
            // This does not work... overwritten by ROM???
            //PROVIDE ( g_rom_flashchip = 0x3ffae270 );
-            esp_rom_spiflash_chip_t g_rom_flashchip;
-            g_rom_flashchip.device_id=0x10;
-            g_rom_flashchip.chip_size=4*1024*1024; //0x3E8000;   // 4M?
-            cpu_physical_memory_write(0x3ffae270,&g_rom_flashchip,sizeof(g_rom_flashchip));
+           //esp_rom_spiflash_chip_t g_rom_flashchip;
+           // g_rom_flashchip.device_id=0x10;
+           // g_rom_flashchip.chip_size=4*1024*1024; //0x3E8000;   // 4M?
+           // cpu_physical_memory_write(0x3ffae270,&g_rom_flashchip,sizeof(g_rom_flashchip));
 
 
 #endif
         }
     } else {
+
+
+
+
+
+            // Add rom from file
+            FILE *f_rom=fopen("rom.bin", "r");
+            
+            if (f_rom == NULL) {
+               printf("   Can't open 'rom.bin' for reading.\n");
+	        } else {
+                unsigned int *rom_data=(unsigned int *)malloc(0xC2000*sizeof(unsigned int));
+                if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
+                   printf(" File 'rom.bin' is truncated or corrupt.\n");                
+                }
+                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned char));
+                fclose(f_rom);
+            }
+
+            FILE *f_rom1=fopen("rom1.bin", "r");
+            
+            if (f_rom1 == NULL) {
+               printf("   Can't open 'rom1.bin' for reading.\n");
+	        } else {
+                unsigned int *rom1_data=(unsigned int *)malloc(0x10000*sizeof(unsigned int));
+                if (fread(rom1_data,0x10000*sizeof(unsigned char),1,f_rom1)<1) {
+                   printf(" File 'rom1.bin' is truncated or corrupt.\n");                
+                }
+                cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
+                fclose(f_rom1);
+            }
+
+
+
+
+
+
+
+
+
         // No elf, try booting from flash...
         if (flash) {
 #if 0
