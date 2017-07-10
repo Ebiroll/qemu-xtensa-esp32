@@ -2891,6 +2891,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                                  strlen(kernel_cmdline) + 1, kernel_cmdline);
         }
 
+/*
         if (dtb_filename) {
             int fdt_size;
             void *fdt = load_device_tree(dtb_filename, &fdt_size);
@@ -2906,7 +2907,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                                  sizeof(dtb_addr), &dtb_addr);
             cur_lowmem = QEMU_ALIGN_UP(cur_lowmem + fdt_size, 4096);
         }
- 
+*/
         if (initrd_filename) {
             BpMemInfo initrd_location = { 0 };
             int initrd_size = load_ramdisk(initrd_filename, cur_lowmem,
