@@ -756,7 +756,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
        if (command==0x05) {
            DEBUG_LOG("CMD 0x05 (RDSR).\n");
        }       
-       if (command==0x03) {
+       if (command==0x03 || command==0x3b ) {
            DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
            // TODO, ignore bit 0-7 !!!
            s->wren=0;
@@ -1436,10 +1436,11 @@ void memdump(uint32_t mem,uint32_t len)
 void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
 {
         if (flash_start==0x01000000) {
+            //fprintf(stderr, "0x100.\n");
             // Special value 0x100 to mark begining. Should not be mapped
             return;
         }
-        fprintf(stderr,"(qemu)  %08X to memory, %08X\n",flash_start,mem_addr);
+        //fprintf(stderr,"(qemu)  %08X to memory, %08X\n",flash_start,mem_addr);
         printf("Flash map data to  %08X to memory, %08X\n",flash_start,mem_addr);
         // I dont know how this works. Guessing
         
@@ -1478,7 +1479,6 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
     if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
     if (addr>=0x10000 && addr<0x11ffc) {
-
         return(pro_MMU_REG[addr/4-0x10000/4]);
     }
 
@@ -1487,7 +1487,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         if (addr==0x123fc)
         {
             // Bootlader already did this, it should be safe to map this, app expects it
-            mapFlashToMem(0x9000, 0x3f409000,0x10000-0x9000);
+            // OLAS? mapFlashToMem(0x9000, 0x3f409000,0x10000-0x9000);
 
             //mapFlashToMem(0x10000 + 0x7000, 0x3f407000,0x10000-0x7000);
 
@@ -1807,13 +1807,15 @@ if (addr>=0x10000 && addr<0x11ffc) {
     }
   }
 
-
   if (addr==0x10134 || addr==0x10138 || addr==0x1013c || addr==0x10140 || 
-      addr==0x10144 || addr==0x10148 || addr==0x1014c || addr==0x10150 ) {
+      addr==0x10144 || addr==0x10148 || addr==0x1014c || addr==0x10150 || 
+      addr==0x10154 || addr==0x10158 || addr==0x1015c || addr==0x10160 ||  
+      addr==0x10164 || addr==0x10168 || addr==0x1016c || addr==0x10170 
+) {
     // Bootloader, loads instruction cache
     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
         // TO TEST BOOTLOADER UNCOMMENT THIS ---->
-        //mapFlashToMem(val*0x10000, 0x400d0000+(val-5)*0x10000,0x10000);            
+        mapFlashToMem(val*0x10000, 0x400d0000+(val-5)*0x10000,0x10000);            
     }
   }
 
@@ -1823,7 +1825,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
             // Partition table
             // 0x8000
             // TO TEST BOOTLOADER ----> Ignore  nv_init_called when testing bootloader         
-            if (nv_init_called) {
+         if (true /*nv_init_called*/) {
                 // Data is located and used at 0x3f400000  0x3f404000 ???
                 // Try this for bootloader
                 // TO TEST BOOTLOADER UNCOMMENT THIS ---->
@@ -1835,13 +1837,16 @@ if (addr>=0x10000 && addr<0x11ffc) {
                 // We cannot allow application to use   0x3f400000
                 if (val!=0x100) {
                 //    mapFlashToMem(val*0x10000 + 0x7000, 0x3f407000,0x10000-0x7000);
-                    mapFlashToMem(val*0x10000 + 0x9000, 0x3f409000,0x10000-0x9000); 
+                // OLAS?    mapFlashToMem(val*0x10000 + 0x9000, 0x3f409000,0x10000-0x9000); 
                 }
             }
       }
    }
    // TO TEST BOOTLOADER comment test for nv_init_called ---->
-   if (nv_init_called) {
+  if (true /*nv_init_called*/) {
+        if (addr==0x10000) {
+                mapFlashToMem(val*0x10000, 0x3f400000,0x10000);
+        }
         if (addr==0x10004) {
                 mapFlashToMem(val*0x10000, 0x3f410000,0x10000);
         }
@@ -1860,16 +1865,41 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x10018) {
                 mapFlashToMem(val*0x10000, 0x3f460000,0x10000);
         }
-
+        if (addr==0x1001c) {
+                mapFlashToMem(val*0x10000, 0x3f470000,0x10000);
+        }
+        if (addr==0x10020) {
+                mapFlashToMem(val*0x10000, 0x3f480000,0x10000);
+        }
+        if (addr==0x10024) {
+                mapFlashToMem(val*0x10000, 0x3f490000,0x10000);
+        }
+/*
+        if (addr==0x10028) {
+                mapFlashToMem(val*0x10000, 0x3f4a0000,0x10000);
+        }
+        if (addr==0x1002c) {
+                mapFlashToMem(val*0x10000, 0x3f4b0000,0x10000);
+        }
+        if (addr==0x10030) {
+                mapFlashToMem(val*0x10000, 0x3f4c0000,0x10000);
+        }
+        if (addr==0x10034) {
+                mapFlashToMem(val*0x10000, 0x3f4d0000,0x10000);
+        }
+        if (addr==0x10038) {
+                mapFlashToMem(val*0x10000, 0x3f4e0000,0x10000);
+        }
+*/
    }
 
 
     // Do not allow new values to pro_MMU_REG[0] its mapped to flash.rodata
-    if (addr!=0x10000) {
-        pro_MMU_REG[addr/4-0x10000/4]=val;
-    }
+         //if (addr!=0x10000) {
+          pro_MMU_REG[addr/4-0x10000/4]=val;
+          //}
     if (val!=0 && val!=0x100) {
-       fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+        //fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 
@@ -1882,7 +1912,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
     if (  addr==0x5f060 || addr==0x5f064 || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
      ||  (addr>=0x69440 && addr<=0x6947c) || addr==0x44008  || addr==0x4400c
     )  {
-        // Cache MMU table?
+        // Less info
     } else {
        if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
     }
@@ -2558,8 +2588,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // TO TEST BOOTLOADER maybe dont initialise these ---->
 
     // Initate same as after running bootloader
-    pro_MMU_REG[0]=2;
-    app_MMU_REG[0]=2;
+    //pro_MMU_REG[0]=2;
+    //app_MMU_REG[0]=2;
     //pro_MMU_REG[50]=4;
     // This requires a valid flash image, but is safe to do berfore elf-load
     //mapFlashToMem(2*0x10000, 0x3f400000,0x10000);
@@ -2891,7 +2921,6 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                                  strlen(kernel_cmdline) + 1, kernel_cmdline);
         }
 
-/*
         if (dtb_filename) {
             int fdt_size;
             void *fdt = load_device_tree(dtb_filename, &fdt_size);
@@ -2907,7 +2936,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                                  sizeof(dtb_addr), &dtb_addr);
             cur_lowmem = QEMU_ALIGN_UP(cur_lowmem + fdt_size, 4096);
         }
-*/
+ 
         if (initrd_filename) {
             BpMemInfo initrd_location = { 0 };
             int initrd_size = load_ramdisk(initrd_filename, cur_lowmem,
@@ -3010,7 +3039,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
 
 
-#if 1
+#if 0
 
             // Patching rom function. ets_unpack_flash_code
             //      j forward 0x13 
@@ -3083,15 +3112,55 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
            // This does not work... overwritten by ROM???
            //PROVIDE ( g_rom_flashchip = 0x3ffae270 );
-            esp_rom_spiflash_chip_t g_rom_flashchip;
-            g_rom_flashchip.device_id=0x10;
-            g_rom_flashchip.chip_size=4*1024*1024; //0x3E8000;   // 4M?
-            cpu_physical_memory_write(0x3ffae270,&g_rom_flashchip,sizeof(g_rom_flashchip));
+           //esp_rom_spiflash_chip_t g_rom_flashchip;
+           // g_rom_flashchip.device_id=0x10;
+           // g_rom_flashchip.chip_size=4*1024*1024; //0x3E8000;   // 4M?
+           // cpu_physical_memory_write(0x3ffae270,&g_rom_flashchip,sizeof(g_rom_flashchip));
 
 
 #endif
         }
     } else {
+
+
+
+
+
+            // Add rom from file
+            FILE *f_rom=fopen("rom.bin", "r");
+            
+            if (f_rom == NULL) {
+               printf("   Can't open 'rom.bin' for reading.\n");
+	        } else {
+                unsigned int *rom_data=(unsigned int *)malloc(0xC2000*sizeof(unsigned int));
+                if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
+                   printf(" File 'rom.bin' is truncated or corrupt.\n");                
+                }
+                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned char));
+                fclose(f_rom);
+            }
+
+            FILE *f_rom1=fopen("rom1.bin", "r");
+            
+            if (f_rom1 == NULL) {
+               printf("   Can't open 'rom1.bin' for reading.\n");
+	        } else {
+                unsigned int *rom1_data=(unsigned int *)malloc(0x10000*sizeof(unsigned int));
+                if (fread(rom1_data,0x10000*sizeof(unsigned char),1,f_rom1)<1) {
+                   printf(" File 'rom1.bin' is truncated or corrupt.\n");                
+                }
+                cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
+                fclose(f_rom1);
+            }
+
+
+
+
+
+
+
+
+
         // No elf, try booting from flash...
         if (flash) {
 #if 0
