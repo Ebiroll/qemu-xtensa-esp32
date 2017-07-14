@@ -756,7 +756,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
        if (command==0x05) {
            DEBUG_LOG("CMD 0x05 (RDSR).\n");
        }       
-       if (command==0x03) {
+       if (command==0x03 ||  command==0x3b ) {
            DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
            // TODO, ignore bit 0-7 !!!
            s->wren=0;
@@ -1440,7 +1440,7 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
             // Special value 0x100 to mark begining. Should not be mapped
             return;
         }
-        fprintf(stderr,"(qemu)  %08X to memory, %08X\n",flash_start,mem_addr);
+        //fprintf(stderr,"(qemu)  %08X to memory, %08X\n",flash_start,mem_addr);
         printf("Flash map data to  %08X to memory, %08X\n",flash_start,mem_addr);
         // I dont know how this works. Guessing
         
@@ -1899,7 +1899,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
           pro_MMU_REG[addr/4-0x10000/4]=val;
           //}
     if (val!=0 && val!=0x100) {
-       fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+        //fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 

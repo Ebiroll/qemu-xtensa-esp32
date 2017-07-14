@@ -756,7 +756,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
        if (command==0x05) {
            DEBUG_LOG("CMD 0x05 (RDSR).\n");
        }       
-       if (command==0x03 || command==0x3b ) {
+       if (command==0x03 || command==0x3b) {
            DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
            // TODO, ignore bit 0-7 !!!
            s->wren=0;
@@ -1456,16 +1456,19 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
             fseek(f_flash,flash_start,SEEK_SET);
             if (fread(rom_data, len, 1, f_flash) < 1)
             {
-                fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt.\n");
+                fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt. %d,%d\n",flash_start,len);
             }
-            //fprintf(stderr,"-%8X\n",mem_addr);
-            //fprintf(stderr,"->%8X\n",mem_addr+0x10000);
+            else {
+                //fprintf(stderr,"-%8X\n",mem_addr);
+                //fprintf(stderr,"->%8X\n",mem_addr+0x10000);
 
-            //memdump(mem_addr,0x4000);
-            cpu_physical_memory_write(mem_addr, rom_data, len );
+                //memdump(mem_addr,0x4000);
+                cpu_physical_memory_write(mem_addr, rom_data, len );
 
-            //fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
+                //fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
+            }
             free(rom_data);
+
         }        
 }
 
@@ -1486,6 +1489,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 
         if (addr==0x123fc)
         {
+            fprintf(stderr,"NV_INIT_CALLED\n\n");
             // Bootlader already did this, it should be safe to map this, app expects it
             // OLAS? mapFlashToMem(0x9000, 0x3f409000,0x10000-0x9000);
 
@@ -1899,7 +1903,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
           pro_MMU_REG[addr/4-0x10000/4]=val;
           //}
     if (val!=0 && val!=0x100) {
-        //fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+        fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 
@@ -1981,6 +1985,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
         case 0x5F0:
             // TODO!! CHECK IF UNUSED, Just unpatches the rom patches
+/*
            printf(" OLAS_EMULATION_ROM_UNPATCH  3ff005F0\n");
            {
              FILE *f_rom=fopen("rom.bin", "r");
@@ -1999,7 +2004,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
             }
            }
 
-/*
+
             // Load data to partiotion to make  nvs_flash_init() happy
             {
                 fprintf(stderr,"Flash map data to memory\n");
