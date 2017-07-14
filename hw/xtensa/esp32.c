@@ -47,6 +47,7 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include "hw/boards.h"
 #include "hw/loader.h"
 #include "elf.h"
+#include "cpu.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
 #include "hw/char/serial.h"
@@ -64,9 +65,10 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include "hw/i2c/i2c_esp32.h"
 #include <poll.h>
 #include <error.h>
+#include "hw/i2c/i2c.h"
 
 // From Memorymapped.cpp
-extern const unsigned char* get_flashMemory();
+extern const unsigned char* get_flashMemory(void );
 
 
 typedef struct Esp32 {
@@ -583,7 +585,7 @@ R_MAX = 0x100
 };
 
 // Redefing for SPI flash 
-#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
+//#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
 
 
 #define ESP32_SPI_FLASH_BITS(reg, field, shift, len) \
@@ -695,7 +697,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
 
 
     if (val & 0x1000000) {
-            DEBUG_LOG("esp32_spi_cmd_erase??? %08x\n",val);
+            DEBUG_LOG("esp32_spi_cmd_erase??? " PRIx64 "\n",val);
             unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
             //write_addr=s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
 
@@ -727,7 +729,9 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     }
     if (val & ESP32_SPI_FLASH_CMD_WREN) {
         DEBUG_LOG("status wren\n");
-        unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+         unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+         (void)write_addr;
+         DEBUG_LOG("Is this address " PRIx64 "\n",write_addr);
         // Not sure this is a good idea??
         // Where is length field?  ESP32_MISO_DLEN
         //    REG_WRITE(SPI_MISO_DLEN_REG(1),  ((ESP_ROM_SPIFLASH_BUFF_BYTE_READ_NUM << 3) - 1) << SPI_USR_MISO_DBITLEN_S);
@@ -797,6 +801,9 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
 
 
        }
+       if (command==0x02) {
+           DEBUG_LOG("SPI_WRITE 0x02. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
+       }
        /*
        if (command==0x02) {
            DEBUG_LOG("SPI_WRITE 0x02. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
@@ -826,6 +833,9 @@ static void esp32_spi_write_address(Esp32SpiState *s, hwaddr addr,
                   ESP32_SPI_GET(s, ADDR, ADDR_RESERVED));
 
 
+
+
+        
 }
 
 
@@ -989,7 +999,7 @@ static Esp32SpiState *esp32_spi_init(int spinum,MemoryRegion *address_space,
                           name, 0x100);
 
 //if (spinum==0) {
-    s->flash_image=get_flashMemory();
+    s->flash_image=(void *)get_flashMemory();
     *flash_image=s->flash_image;
 //}
     //int *test=(int *)s->flash_image;
@@ -1174,8 +1184,10 @@ void *connection_handler(void *connect)
     return 0 ;
 }
 
-void *gdb_socket_thread(void *uart_num)
+void *gdb_socket_thread(void *data)
 {
+    int *ptr=(int *)data;
+    int uart_num=(int) *ptr;
     int socket_desc , client_sock , c ; //, *new_sock;
     struct sockaddr_in server , client;
      
@@ -1394,7 +1406,7 @@ static void esp32_reset(void *opaque)
 }
 
 
-static unsigned int sim_RTC_CNTL_DIG_ISO_REG;
+static unsigned int sim_RTC_CNTL_DIG_ISO_REG=0;
 
 static unsigned int sim_RTC_CNTL_STORE5_REG=0;
 
@@ -1415,11 +1427,14 @@ static unsigned int sim_DPORT_APP_CACHE_CTRL_REG=0x28;
 static unsigned int sim_DPORT_APPCPU_CTRL_D_REG=0;
 
 
-static unsigned int pro_MMU_REG[0x2000];
+static unsigned int pro_MMU_REG[0x2000]={0};
 
-static unsigned int app_MMU_REG[0x2000];
+static unsigned int app_MMU_REG[0x2000]={0};
 
 bool nv_init_called=false;
+
+void memdump(uint32_t mem,uint32_t len);
+
 
 void memdump(uint32_t mem,uint32_t len)
 {
@@ -1432,6 +1447,8 @@ void memdump(uint32_t mem,uint32_t len)
     }
     free(rom_data);
 }
+
+void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len);
 
 void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
 {
@@ -1653,7 +1670,7 @@ Because nvs_flash_init(); was not called....
            break;
             // rtc_clk_xtal_freq_get TODO investigate further
        case 0x480b0:
-           printf("RTC_XTAL_FREQ_REG 3ff480b0=%08X\n",0xf04ff04ff);
+           printf("RTC_XTAL_FREQ_REG 3ff480b0=%" PRIx64 "\n",0xf04ff04ff);
            return 0x04ff04ff;
            break;
 
@@ -1972,7 +1989,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
            break;
 
         case 0x5C:
-           printf(" DPORT_APP_CACHE_CTRL1_REG  3ff0005C=%08X\n",val);
+           printf(" DPORT_APP_CACHE_CTRL1_REG  3ff0005C= %" PRIx64 "\n",val);
            sim_DPORT_APP_CACHE_CTRL1_REG=val;
            break;
 
@@ -2116,11 +2133,11 @@ if (addr>=0x12000 && addr<0x13ffc) {
               printf("RTC_CNTL_OPTIONS0_REG, 3ff48000\n");
               if (val==0x30) {
                 if (APPcpu) {
-                    cpu_reset(APPcpu);
+                    cpu_reset(CPU(APPcpu));
                     xtensa_runstall(&APPcpu->env, true);
                 }
                 if (PROcpu) {
-                    cpu_reset(PROcpu);
+                    cpu_reset(CPU(PROcpu));
                     //0x400076dd
                     PROcpu->env.pc=0x40000400;
                     xtensa_runstall(&PROcpu->env, false);
@@ -2431,7 +2448,7 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
             gdb_serial[0]->gdb_serial_data[gdb_serial[0]->gdb_serial_buff_tx%MAX_GDB_BUFF]=(char)val;
             gdb_serial[0]->gdb_serial_buff_tx++;
         }
-        fprintf(stderr,"%c",val);
+        fprintf(stderr,"%c",(int)val);
     } else if (addr==0x10000) {
         // FIFO UART NUM 1 --  UART_FIFO_AHB_REG
         if (gdb_serial[1]->gdb_serial_connected) {
@@ -2439,14 +2456,15 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
             gdb_serial[1]->gdb_serial_buff_tx++;
         }
 
-        fprintf(stderr,"%c",val);
+        fprintf(stderr,"%c",(int)val);
     } else if (addr==0x2e000) {
         // FIFO UART NUM 2  -- UART_FIFO_AHB_REG
         if (gdb_serial[2]->gdb_serial_connected) {
             gdb_serial[2]->gdb_serial_data[gdb_serial[2]->gdb_serial_buff_tx%MAX_GDB_BUFF]=(char)val;
             gdb_serial[2]->gdb_serial_buff_tx++;
         }
-        fprintf(stderr,"%c",val);
+        int tmp=val;
+        fprintf(stderr,"%c",tmp);
     } else {
         printf("wifi write %" PRIx64 ",%" PRIx64 " \n",addr,val);
     }
@@ -2475,6 +2493,7 @@ static uint64_t esp_iomux_read(void *opaque, hwaddr addr,
         unsigned size)
 {
        printf("iomux read %" PRIx64 " \n",addr);
+       return(0);
 
 }
 
@@ -2528,7 +2547,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     MemoryRegion *iomux;
 
-    MemoryRegion *gpio,*ram,*ram1, *rom, *system_io, *ulp_slowmem;
+    MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem; // *gpio,
     static MemoryRegion *wifi_io;
 
     DriveInfo *dinfo;
@@ -2551,7 +2570,9 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     printf("esp32_init\n");
     for (q=0;q<3;q++) {
-        if( pthread_create( &pgdb_socket_thread , NULL ,  gdb_socket_thread , (void*) q) < 0)
+        int *index=(int *)malloc(sizeof(int));
+        *index=q;
+        if( pthread_create( &pgdb_socket_thread , NULL ,  gdb_socket_thread , (void*) index) < 0)
         {
             printf("Failed to create gdb connection thread\n");
         }
@@ -2806,6 +2827,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                     system_memory, /*cache*/ 0x800000, "esp32.flash.odd",
                     xtensa_get_extint(&esp32->cpu[0]->env, 6), &flash_image);
 
+(void )spi;
 
 #if 0
  // 0x60013000
@@ -3082,9 +3104,9 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
 
            //Patch SPIEraseSector b *0x40062ccc
-           static const uint8_t retw_n[] = {
-               0xc, 0x2,0x1d, 0xf0
-           };
+           //static const uint8_t retw_n[] = {
+           //    0xc, 0x2,0x1d, 0xf0
+           //};
 
             // Patch rom, SPIEraseSector 0x40062ccc
             //cpu_physical_memory_write(0x40062ccc+3, retw_n, sizeof(retw_n));
