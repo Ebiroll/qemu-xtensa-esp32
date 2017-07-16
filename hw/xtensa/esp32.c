@@ -1895,16 +1895,18 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x10024) {
                 mapFlashToMem(val*0x10000, 0x3f490000,0x10000);
         }
-/*
+
         if (addr==0x10028) {
                 mapFlashToMem(val*0x10000, 0x3f4a0000,0x10000);
         }
+
         if (addr==0x1002c) {
                 mapFlashToMem(val*0x10000, 0x3f4b0000,0x10000);
         }
         if (addr==0x10030) {
                 mapFlashToMem(val*0x10000, 0x3f4c0000,0x10000);
         }
+/*
         if (addr==0x10034) {
                 mapFlashToMem(val*0x10000, 0x3f4d0000,0x10000);
         }
