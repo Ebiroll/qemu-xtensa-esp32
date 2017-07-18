@@ -1821,22 +1821,32 @@ if ((addr==0x60054) ||
 }
 
 if (addr>=0x10000 && addr<0x11ffc) {
-  if (addr==0x100c8) {
-    // Bootloader, loads instruction cache
+    if (addr==0x100c8) {
+    // Bootloader, loads instruction cache, from this location
     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
-        mapFlashToMem(val*0x10000, 0x3f720000,0x10000);            
+        mapFlashToMem(val*0x10000, 0x3f720000 + 0*0x10000 ,0x10000);            
     }
   }
 
+  // This probably continues
   if (addr==0x10134 || addr==0x10138 || addr==0x1013c || addr==0x10140 || 
       addr==0x10144 || addr==0x10148 || addr==0x1014c || addr==0x10150 || 
       addr==0x10154 || addr==0x10158 || addr==0x1015c || addr==0x10160 ||  
-      addr==0x10164 || addr==0x10168 || addr==0x1016c || addr==0x10170 
+      addr==0x10164 || addr==0x10168 || addr==0x1016c || addr==0x10170 ||
+      addr==0x10174 || addr==0x10178 || addr==0x1017c || addr==0x10180 ||
+      addr==0x10184 || addr==0x10188 || addr==0x1018c || addr==0x10190 ||
+      addr==0x10194 || addr==0x10198 || addr==0x1019c || addr==0x101a0 
 ) {
-    // Bootloader, loads instruction cache
+
     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
+        int ix=(addr-0x10000)/4;
+        unsigned int mem_loc=0x400d0000+(ix-77)*0x10000;
         // TO TEST BOOTLOADER UNCOMMENT THIS ---->
-        mapFlashToMem(val*0x10000, 0x400d0000+(val-5)*0x10000,0x10000);            
+        //mapFlashToMem(val*0x10000, 0x400d0000+(val-5)*0x10000,0x10000);
+        mapFlashToMem(val*0x10000, mem_loc,0x10000);
+        fprintf (stderr, "(qemu) IMMU1 %" PRIx64 "  %" PRIx64 "\n" ,0x400d0000+(val-5)*0x10000,val); 
+        fprintf (stderr, "(qemu) IMMU2 %" PRIx64 "  %" PRIx64 "\n" ,mem_loc,val); 
+
     }
   }
 
@@ -1906,14 +1916,17 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x10030) {
                 mapFlashToMem(val*0x10000, 0x3f4c0000,0x10000);
         }
-/*
+
         if (addr==0x10034) {
                 mapFlashToMem(val*0x10000, 0x3f4d0000,0x10000);
         }
         if (addr==0x10038) {
                 mapFlashToMem(val*0x10000, 0x3f4e0000,0x10000);
         }
-*/
+        if (addr==0x1003c) {
+                mapFlashToMem(val*0x10000, 0x3f4f0000,0x10000);
+        }
+
    }
 
 
