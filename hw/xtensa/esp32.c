@@ -2235,8 +2235,18 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 
     Esp32WifiState *s=opaque;
 
-    printf("wifi read %" PRIx64 " \n",addr);
+    printf("wifi read 0x%" PRIx64 " \n",addr);
 
+
+        // WDEV_RND_REG
+
+        if (addr==0x35144) {
+            static int rr=47;
+             rr=rr*735%65535;
+             printf("WDEV_RND_REG\n");
+            return (rr);
+        }
+    
     // e004   rom i2c 
     // e044   rom i2c
 /*
@@ -2416,7 +2426,15 @@ rom_i2c_reg block 0x67 reg 0x6 57
          //return (test--);
         }
         //return 0;
-        //return 
+        //return
+        //
+        // WDEV_RND_REG 
+        case 0x35144:
+             printf("0x0000000000000000\n");
+            return (0x42);
+
+        case 35144:
+            return (0x42);
     default:
         return(s->reg[addr]);
         break;
