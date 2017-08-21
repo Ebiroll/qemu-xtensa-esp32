@@ -1520,33 +1520,6 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         return(app_MMU_REG[addr/4-0x12000/4]);
     }
 
-// Exception in i2c_set_pin
-
-//0x4010ccce in i2c_set_pin (i2c_num=<optimized out>, sda_io_num=GPIO_NUM_21, scl_io_num=GPIO_NUM_22,
-//    sda_pullup_en=GPIO_PULLUP_ENABLE, scl_pullup_en=GPIO_PULLUP_ENABLE, mode=I2C_MODE_MASTER)
-//    at /home/olof/esp/esp-idf/components/driver/./i2c.c:631
-
-/* No crash here
-Because nvs_flash_init(); was not called....
-#0  i2c_set_pin (i2c_num=I2C_NUM_0, sda_io_num=1073413760, scl_io_num=GPIO_NUM_1, sda_pullup_en=GPIO_PULLUP_ENABLE, 
-    scl_pullup_en=(unknown: 1073429864), mode=I2C_MODE_MASTER) at /home/olof/esp/esp-idf/components/driver/./i2c.c:601
-
- */
-//             gpio_set_level(sda_io_num, I2C_IO_INIT_LEVEL);                                                            │
-//             PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[sda_io_num], PIN_FUNC_GPIO);     
-//
-// 0x4010ccc9 <i2c_set_pin+381>    call8  0x4010c054 <gpio_set_level>                                                        │
-//   0x4010cccc <i2c_set_pin+384>    l32i.n a8, a1, 16 
-//       a1=   0x3ffb81c0
-//       a8 becomes 0xffffffff                                           
-//   0x4010ccce <i2c_set_pin+386>    memw 
-//   Access memory 0xffffffff                                                                                     │
-//   0x4010ccd1 <i2c_set_pin+389>    l32i.n a9, a8, 0                                   
-//
-//
-// PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[sda_io_num], PIN_FUNC_GPIO);
-// p &GPIO_PIN_MUX_REG
-// $14 = (const uint32_t (*)[40]) 0x3f40809c <GPIO_PIN_MUX_REG>
      // gpio
      if (addr>=0x44000 && addr<0x445cc) {
         unsigned int gpio_num=(addr-0x44000)/4;
@@ -1842,11 +1815,8 @@ if (addr>=0x10000 && addr<0x11ffc) {
         int ix=(addr-0x10000)/4;
         unsigned int mem_loc=0x400d0000+(ix-77)*0x10000;
         // TO TEST BOOTLOADER UNCOMMENT THIS ---->
-        //mapFlashToMem(val*0x10000, 0x400d0000+(val-5)*0x10000,0x10000);
         mapFlashToMem(val*0x10000, mem_loc,0x10000);
-        fprintf (stderr, "(qemu) IMMU1 %" PRIx64 "  %" PRIx64 "\n" ,0x400d0000+(val-5)*0x10000,val); 
-        fprintf (stderr, "(qemu) IMMU2 %" PRIx64 "  %" PRIx64 "\n" ,mem_loc,val); 
-
+        //fprintf (stderr, "(qemu) IMMU2 %" PRIx64 "  %" PRIx64 "\n" ,mem_loc,val); 
     }
   }
 
@@ -1935,7 +1905,7 @@ if (addr>=0x10000 && addr<0x11ffc) {
           pro_MMU_REG[addr/4-0x10000/4]=val;
           //}
     if (val!=0 && val!=0x100) {
-        fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+        //fprintf (stderr, "(qemu) MMU %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
     }
 }
 
