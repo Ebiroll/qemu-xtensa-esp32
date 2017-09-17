@@ -1533,6 +1533,10 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 
      }
 
+    // Timer count reg
+    static int timerCountReg=0;
+     
+
     switch (addr) {
 
        case 0x38:
@@ -1622,10 +1626,17 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
         case 0x47004:
             //  READ_PERI_REG(FRC_TIMER_COUNT_REG(0));
             {
-                static int timerCountReg=0;
                 timerCountReg++;  // Ticks??
                 return(timerCountReg);
             }
+
+            case 0x47024:
+            //  READ_PERI_REG(FRC_TIMER_COUNT_REG(1));
+            {
+                timerCountReg++;  // Ticks??
+                return(timerCountReg);
+            }
+
             break;
         case 0x48044:
            printf("RTC_CNTL_INT_ST_REG 3ff48044=0x0\n");
