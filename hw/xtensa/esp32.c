@@ -2557,7 +2557,13 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     Esp32SpiState *spi;
     void *flash_image;
     DeviceState *dev;
+    DeviceState *dev_fixed;
+    DeviceState *dev_fixed_2;
     I2CBus *i2c;
+    I2CBus *i2c_fixed;
+    I2CBus *i2c_fixed_2;
+    //I2CBus *i2c_fixed;
+    //
 
     MemoryRegion *iomux;
 
@@ -2895,6 +2901,18 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
             i2c_create_slave(i2c, "ssd1306", 0x3c);
             //i2c_create_slave(i2c, "ssd1306", 0x02);
             //i2c_create_slave(i2c, "tmpbme280", 0x77);
+        }
+
+        dev_fixed = sysbus_create_simple(TYPE_ESP32_I2C,  0x60013000 , NULL);
+        i2c_fixed = (I2CBus *)qdev_get_child_bus(dev_fixed, "i2c");
+        if (true) {
+            i2c_create_slave(i2c_fixed, "ssd1306", 0x3c);
+        }
+
+        dev_fixed_2 = sysbus_create_simple(TYPE_ESP32_I2C,  0x60027000 , NULL);
+        i2c_fixed_2 = (I2CBus *)qdev_get_child_bus(dev_fixed_2, "i2c");
+        if (true) {
+            i2c_create_slave(i2c_fixed_2, "ssd1306", 0x3c);
         }
     }
 
