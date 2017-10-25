@@ -37,12 +37,15 @@
 #define I2C_TX_SEND_EMPTY_INT_ENA  (BIT(12))
 #define I2C_MASTER_TRAN_COMP_INT_ENA  (BIT(6))
 
+#define I2C_TIME_OUT_INT_ST_M  (BIT(8))
+
 
 #define I2C_MASTER_TRAN_COMP_INT_RAW  (BIT(6))
 
 
 #define  I2C_TXFIFO_EMPTY_INT  BIT(1)
 #define  I2C_TRANS_COMPLETE_INT  BIT(7)
+#define  I2C_TIME_OUT_INT_ST   BIT(8)
 #define  I2C_TRANS_START_INT  (BIT(9))
 
 #define DEFINE_BITS(prefix, reg, field, shift, len) \
@@ -59,7 +62,7 @@ enum {
      I2C_SLAVE_ADDR_REG,
      I2C_RXFIFO_ST_REG,
      I2C_FIFO_CONF_REG,  // 0x18
-     I2C_SCL_UNUSED1,    //0x1c     
+     I2C_DATA_APB_REG,    //0x1c     
      I2C_INT_RAW_REG,
      I2C_INT_CLR_REG,
      I2C_INT_ENA_REG,
@@ -101,7 +104,7 @@ const char *I2C_REG_NAME[]= {
     "I2C_SLAVE_ADDR_REG",
     "I2C_RXFIFO_ST_REG",
     "I2C_FIFO_CONF_REG",  
-    "I2C_SCL_UNUSED1",         
+    "I2C_DATA_APB_REG",         
     "I2C_INT_RAW_REG",
     "I2C_INT_CLR_REG",
     "I2C_INT_ENA_REG",
@@ -294,14 +297,16 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
     switch (offset/4) {
         
-    // Used by arduino driver
-    case I2C_SCL_UNUSED1:
+    // Used by arduino driver, is --- I2C_DATA_APB_REG 
+    case I2C_DATA_APB_REG:
         {
             use_localfifo=1;
             apb_data[data_offset++&0xff]=value;
 
-            //qemu_log_mask(LOG_GUEST_ERROR,
-            //                "%s: %s DATA!! 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+         //
+
+            qemu_log_mask(LOG_GUEST_ERROR,
+                            "%s: %s 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
         }
         break;
 
@@ -443,10 +448,25 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
                             if (opcode==4) {
                                 s->i2c_int_raw=I2C_MASTER_TRAN_COMP_INT_RAW;
-                                if (I2C_MASTER_TRAN_COMP_INT_ENA==(s->i2c_int_ena & I2C_MASTER_TRAN_COMP_INT_ENA)) {                                
-                                    s->int_status=I2C_TRANS_COMPLETE_INT;
+
+                                if (I2C_TIME_OUT_INT_ST_M ==(s->i2c_int_ena & I2C_TIME_OUT_INT_ST_M)) {                               
+                                    qemu_log_mask(LOG_GUEST_ERROR,
+                                        "%s: timeout ------------------ \n", __func__); 
+                                    s->int_status=0x80; // |  I2C_TIME_OUT_INT_ST;
+                                    //s->int_status=I2C_TIME_OUT_INT_ST;
                                     qemu_irq_raise(irq);
                                 }
+
+
+                                if (I2C_MASTER_TRAN_COMP_INT_ENA==(s->i2c_int_ena & I2C_MASTER_TRAN_COMP_INT_ENA)) {                                
+                                    s->int_status=I2C_TRANS_COMPLETE_INT;
+                                    qemu_log_mask(LOG_GUEST_ERROR,
+                                        "%s: complete ------------------ \n", __func__); 
+                                    qemu_irq_raise(irq);
+                                }
+
+
+
                                 data_offset=0;
                                 read_offset=0;
                             }
