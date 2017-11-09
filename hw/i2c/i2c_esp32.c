@@ -156,7 +156,28 @@ typedef struct Esp32I2CState {
     unsigned int  use_localfifo;
 
 
-    unsigned int  i2c_sr_reg;
+    //unsigned int  i2c_sr_reg;
+    union {
+        struct {
+            uint32_t ack_rec:             1;        /*This register stores the value of ACK bit.*/
+            uint32_t slave_rw:            1;        /*when in slave mode  1：master read slave  0: master write slave.*/
+            uint32_t time_out:            1;        /*when I2C takes more than time_out_reg clocks to receive a data then this register changes to high level.*/
+            uint32_t arb_lost:            1;        /*when I2C lost control of SDA line  this register changes to high level.*/
+            uint32_t bus_busy:            1;        /*1:I2C bus is busy transferring data. 0:I2C bus is in idle state.*/
+            uint32_t slave_addressed:     1;        /*when configured as i2c slave  and the address send by master is equal to slave's address  then this bit will be high level.*/
+            uint32_t byte_trans:          1;        /*This register changes to high level when one byte is transferred.*/
+            uint32_t reserved7:           1;
+            uint32_t rx_fifo_cnt:         6;        /*This register represent the amount of data need to send.*/
+            uint32_t reserved14:          4;
+            uint32_t tx_fifo_cnt:         6;        /*This register stores the amount of received data  in ram.*/
+            uint32_t scl_main_state_last: 3;        /*This register stores the value of state machine for i2c module.  3'h0: SCL_MAIN_IDLE  3'h1: SCL_ADDRESS_SHIFT 3'h2: SCL_ACK_ADDRESS  3'h3: SCL_RX_DATA  3'h4 SCL_TX_DATA  3'h5:SCL_SEND_ACK 3'h6:SCL_WAIT_ACK*/
+            uint32_t reserved27:          1;
+            uint32_t scl_state_last:      3;        /*This register stores the value of state machine to produce SCL. 3'h0: SCL_IDLE  3'h1:SCL_START   3'h2:SCL_LOW_EDGE  3'h3: SCL_LOW   3'h4:SCL_HIGH_EDGE   3'h5:SCL_HIGH  3'h6:SCL_STOP*/
+            uint32_t reserved31:          1;
+        };
+        uint32_t val;
+    } i2c_sr_reg;
+
     unsigned int  i2c_fifo_conf_reg;
 
     //unsigned int data_address;
@@ -208,8 +229,8 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
 {
     Esp32I2CState *s = (Esp32I2CState *)opaque;
 
-    //qemu_log_mask(LOG_GUEST_ERROR,
-    //                "%s: %s regnum 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset);
+    qemu_log_mask(LOG_GUEST_ERROR,
+                    "%s: %s regnum 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset);
 
 
     switch (offset/4) {
@@ -217,8 +238,8 @@ static uint64_t esp32_i2c_read(void *opaque, hwaddr offset,
              return(s->i2c_fifo_conf_reg);
              break;
         case I2C_SR_REG:
-             //return(s->i2c_sr_reg);
-             return(-1);
+             return(s->i2c_sr_reg.val);
+             //return(-1);
              break;
         case I2C_INT_ENA_REG:
              return(s->i2c_int_ena);
@@ -291,8 +312,8 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
     Esp32I2CState *s = (Esp32I2CState *)opaque;
     unsigned long u32_value=value & 0xffff;
 
-    //qemu_log_mask(LOG_GUEST_ERROR,
-    //                "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
+    qemu_log_mask(LOG_GUEST_ERROR,
+                    "%s: %s regnum 0x%x val 0x%x\n", __func__,I2C_REG_NAME[offset/4], (int)offset,u32_value);
 
 
     switch (offset/4) {
@@ -302,6 +323,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
         {
             use_localfifo=1;
             apb_data[data_offset++&0xff]=value;
+            s->i2c_sr_reg.tx_fifo_cnt++;
 
          //
 
@@ -311,7 +333,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
         break;
 
     case I2C_SR_REG:
-        s->i2c_sr_reg=value;
+        s->i2c_sr_reg.val=value;
         break;
 
     case I2C_INT_ENA_REG:
@@ -342,6 +364,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             qemu_log_mask(LOG_GUEST_ERROR,
                                "%s: execute OPCODE 0x%x\n" , __func__,opcode);
 
+                            s->i2c_sr_reg.tx_fifo_cnt++;
 
 
                             if (opcode==0) {
@@ -379,7 +402,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                     // Not NULL response should indicate missing
                                     if (i2c_start_transfer(s->bus,address,send)==0) 
                                     {
-                                        s->i2c_sr_reg=s->i2c_sr_reg | 0x01;
+                                        s->i2c_sr_reg.val=s->i2c_sr_reg.val | 0x01;
                                     }
                                     else
                                     {
@@ -511,8 +534,11 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
             }
 
             if ((u32_value & BIT(12)) == BIT(12)) {
-                //qemu_log_mask(LOG_GUEST_ERROR,
-                //        "%s: I2C_FIFO_CONF_REG  RESET RX FIFO 0x%x\n", __func__, (int)value & 0xffff);
+                qemu_log_mask(LOG_GUEST_ERROR,
+                        "%s: I2C_FIFO_CONF_REG  RESET RX FIFO 0x%x\n", __func__, (int)value & 0xffff);
+
+                s->i2c_sr_reg.tx_fifo_cnt=0;
+
             }
 
 
@@ -590,7 +616,8 @@ static void esp32_i2c_init(Object *obj)
 
     s->use_localfifo=0;
     s->i2c_ctr_reg=0;
-    s->i2c_sr_reg=0xffff;
+    //s->i2c_sr_reg=0xffff;
+    s->i2c_sr_reg.val=0x0;
 
     s->bus = i2c_init_bus(dev, "i2c");
     memory_region_init_io(&s->iomem, obj, &esp32_i2c_ops, s,
