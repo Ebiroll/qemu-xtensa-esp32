@@ -6,9 +6,13 @@
 
 #pragma once
 
+#ifdef __MINGW32__
+#define _MSC_VER 1600
+#endif
+
 // define fixed size integer types
 #ifdef _MSC_VER
-typedef unsigned __int64 uint64_t;
+//typedef unsigned __int64 uint64_t;
 #else
 #include <stdint.h>
 #endif

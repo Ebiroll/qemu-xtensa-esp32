@@ -11,7 +11,9 @@
 #include <stdlib.h>
 
 // OS-specific
-#ifdef _MSC_VER
+#ifdef __MINGW32__
+#define _MSC_VER 1600
+//_MSC_VER || 
 // Windows
 #include <windows.h>
 #else
@@ -349,7 +351,10 @@ extern "C" const unsigned char* get_flashMemory()
     exit(1);
   }
   // Posix only
+  #ifdef _MSC_VER  
+  #else
   ftruncate(fileno(file), X);
+  #endif
   //fseek(fp, X , SEEK_SET);
   fclose(file);
 
