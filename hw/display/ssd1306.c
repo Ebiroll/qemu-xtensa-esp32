@@ -148,9 +148,9 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                     s->col=s->col_min;                    
                 }
                 if (s->row>s->row_max) {
-                    s->row=s->row_min;
+                    //s->row=s->row_min;
                     // Seems to work like this (on cheap displays?)...
-                    //s->row=0;
+                    s->row=0;
                 }
 
                 //if (s->col>127) {
@@ -468,7 +468,7 @@ static int ssd1306_init(I2CSlave *i2c)
 {
     ssd1306_state *s = SSD1306(i2c);
 
-    // Only one display although it can appear in many io-löocations.
+    // Only one display although it can appear in many io-locations.
     if (the_ssd1306==NULL) {
         the_ssd1306=s;
     }
