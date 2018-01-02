@@ -76,6 +76,10 @@ typedef struct {
     uint8_t framebuffer[MAX_FRAMEBUFF];
 } ssd1306_state;
 
+
+ssd1306_state *the_ssd1306=NULL;
+
+
 static int ssd1306_recv(I2CSlave *i2c)
 {
     BADF("Reads not implemented\n");
@@ -84,7 +88,7 @@ static int ssd1306_recv(I2CSlave *i2c)
 
 static int ssd1306_send(I2CSlave *i2c, uint8_t data)
 {
-    ssd1306_state *s = SSD1306(i2c);
+    ssd1306_state *s = the_ssd1306; //SSD1306(i2c);
     enum ssd1306_cmd old_cmd_state;
 
     switch (s->mode) {
@@ -101,31 +105,40 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             DPRINTF(" ssd1306 Unexpected byte 0x%x\n", data);
         break;
     case SSD1306_DATA:
-        DPRINTF("data 0x%02x\n", data);
-        int offset=0;
-        //if (s->adressing_mode==SSD1306_PAGE) {
-        //    offset=s->col + s->row * 128;
-        //    if (offset < MAX_FRAMEBUFF) {
-        //        s->framebuffer[offset] = data;
-        //    }
-        //    s->row++;
-        //    if (s->row>7) {
-        //        s->col++;
-        //        s->row=0;
-        //    }
-        //} else if (s->adressing_mode==SSD1306_HORIZONTAL) {
-            offset=s->col + s->row * 128;
-            if (offset < MAX_FRAMEBUFF) {
-                s->framebuffer[offset] = data;
-            }
-            s->col++;
-            if (s->col>127) {
-                s->row++;
-                s->col=0;
-            }
-        //}
+        {
+            DPRINTF("data 0x%02x ", data);
+            int offset=0;
+            //s->framebuffer[offset] = 0xf0;
+            //s->framebuffer[offset+1] =  0xf0;
+            //s->framebuffer[offset+2] =  0xf0;
 
-        s->redraw = 1;
+            //if (s->adressing_mode==SSD1306_PAGE) {
+            //    offset=s->col + s->row * 128;
+            //    if (offset < MAX_FRAMEBUFF) {
+            //        s->framebuffer[offset] = data;
+            //    }
+            //    s->row++;
+            //    if (s->row>7) {
+            //        s->col++;
+            //        s->row=0;
+            //    }
+            //} else if (s->adressing_mode==SSD1306_HORIZONTAL) {
+                if (s->row>7) {
+                    s->row=0;
+                }
+                offset=s->col + s->row * 128;
+                DPRINTF("%d,%d offset 0x%02x\n", s->col , s->row,offset);
+                if (offset < MAX_FRAMEBUFF) {
+                    s->framebuffer[offset] = data;
+                }
+                s->col++;
+                if (s->col>127) {
+                    s->row++;
+                    s->col=0;
+                }
+            //}
+            s->redraw = 1;
+        }
         break;
     case SSD1306_CMD:
         old_cmd_state = s->cmd_state;
@@ -174,17 +187,20 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 s->cmd_state = SSD1306_CMD_SKIP1;
                 break;
             case 0x21:
-                // Column Address ,
+                // Column Address , 1-127
                 { 
                    DPRINTF("1306 Column addressing 0x%02x\n", data );
                    s->cmd_state = SSD1306_CMD_SKIP1;
+                    //s->col = 0;
                 }
                 break;
             case 0x22:
-                // Page Address ,
+                // Page Address , 0-7
                 { 
                    DPRINTF("1306 Page addressing 0x%02x\n", data );
                    s->cmd_state = SSD1306_CMD_SKIP1;
+                   //s->col = 0;
+
                 }
                 break;
 
@@ -276,7 +292,8 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
 
 static void ssd1306_event(I2CSlave *i2c, enum i2c_event event)
 {
-    ssd1306_state *s = SSD1306(i2c);
+    //ssd1306_state *s = SSD1306(i2c);
+    ssd1306_state *s = the_ssd1306;
 
     DPRINTF("ssd1306_event 0x%02x\n", (int)event);
 
@@ -295,7 +312,9 @@ static void ssd1306_event(I2CSlave *i2c, enum i2c_event event)
 
 static void ssd1306_update_display(void *opaque)
 {
-    ssd1306_state *s = (ssd1306_state *)opaque;
+    //ssd1306_state *s = (ssd1306_state *)opaque;
+    ssd1306_state *s = the_ssd1306;
+
     DisplaySurface *surface = qemu_console_surface(s->con);
     uint8_t *dest;
     uint8_t *src;
@@ -306,6 +325,8 @@ static void ssd1306_update_display(void *opaque)
     char colortab[MAGNIFY * 8];
     int dest_width;
     uint8_t mask;
+
+    //DPRINTF("ssd1306_update_display  0x%02x\n", 0x47);
 
     if (!s->redraw)
         return;
@@ -363,7 +384,7 @@ static void ssd1306_update_display(void *opaque)
 
 static void ssd1306_invalidate_display(void * opaque)
 {
-    ssd1306_state *s = (ssd1306_state *)opaque;
+    ssd1306_state *s = the_ssd1306; //(ssd1306_state *)opaque;
     s->redraw = 1;
 }
 
@@ -397,6 +418,11 @@ static int ssd1306_init(I2CSlave *i2c)
 {
     ssd1306_state *s = SSD1306(i2c);
 
+    // Only one display although it can appear in many io-löocations.
+    if (the_ssd1306==NULL) {
+        the_ssd1306=s;
+    }
+
     s->col=0;
     s->row=0;
     s->start_line=0;
@@ -404,6 +430,14 @@ static int ssd1306_init(I2CSlave *i2c)
 
     s->con = graphic_console_init(DEVICE(i2c), 0, &ssd1306_ops, s);
     qemu_console_resize(s->con, 128 * MAGNIFY, 64 * MAGNIFY);
+    int offset=0;
+    while(offset<MAX_FRAMEBUFF) {
+        s->framebuffer[offset] = 0 ;
+        offset++;
+    }
+
+
+
     return 0;
 }
 

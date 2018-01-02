@@ -360,9 +360,11 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
 
                 for (ix=0;ix<s->num_out;ix++) {
                             char opcode= (s->command_reg[ix] & 0x3800) >> 11;
-                            len=(s->command_reg[ix] & 0xf);
+                            len=(s->command_reg[ix] & 0x1f);
                             qemu_log_mask(LOG_GUEST_ERROR,
                                "%s: execute OPCODE 0x%x\n" , __func__,opcode);
+                            qemu_log_mask(LOG_GUEST_ERROR,
+                               "%s: len 0x%x\n" , __func__,len);
 
                             s->i2c_sr_reg.tx_fifo_cnt++;
 
@@ -389,7 +391,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                             if (opcode==1) {
                                 // Start transfer here
                                 if (start_transfer) {
-                                     unsigned int address = (apb_data[read_offset&0xff] >> 1);
+                                    unsigned int address = (apb_data[read_offset&0xff] >> 1);
                                     //address = 0x78;
                                     unsigned int send = apb_data[read_offset&0xff] & 0x01;
                                     read_offset++;
@@ -399,7 +401,7 @@ static void esp32_i2c_write(void *opaque, hwaddr offset,
                                                 "%s: start transfer adress --------- 0x%x s=%x\n", __func__, (int)address,send);
 
 
-                                    // Not NULL response should indicate missing
+                                    // Not NULL response should indicate missing device?
                                     if (i2c_start_transfer(s->bus,address,send)==0) 
                                     {
                                         s->i2c_sr_reg.val=s->i2c_sr_reg.val | 0x01;
