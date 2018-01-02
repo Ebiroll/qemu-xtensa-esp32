@@ -50,7 +50,11 @@ enum ssd1306_adressing_mode
 enum ssd1306_cmd {
     SSD1306_CMD_NONE,
     SSD1306_CMD_SKIP1,
-    SSD1306_CMD_SKIP2
+    SSD1306_CMD_SKIP2,
+    SSD1306_COLUMN_ADRESSING1,
+    SSD1306_COLUMN_ADRESSING2,
+    SSD1306_ROW_ADRESSING1,
+    SSD1306_ROW_ADRESSING2
 };
 
 #define TYPE_SSD1306 "ssd1306"
@@ -64,6 +68,12 @@ typedef struct {
     QemuConsole *con;
     int row;
     int col;
+
+    int col_min;
+    int col_max;
+    int row_min;
+    int row_max;
+
     int start_line;
     int mirror;
     int flash;
@@ -123,19 +133,30 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             //        s->row=0;
             //    }
             //} else if (s->adressing_mode==SSD1306_HORIZONTAL) {
-                if (s->row>7) {
-                    s->row=0;
-                }
+                //if (s->row>7) {
+                //    s->row=0;
+               //}
                 offset=s->col + s->row * 128;
-                DPRINTF("%d,%d offset 0x%02x\n", s->col , s->row,offset);
+                //DPRINTF("%d,%d offset 0x%02x\n", s->col , s->row,offset);
                 if (offset < MAX_FRAMEBUFF) {
                     s->framebuffer[offset] = data;
                 }
                 s->col++;
-                if (s->col>127) {
+
+                if (s->col>s->col_max) {
                     s->row++;
-                    s->col=0;
+                    s->col=s->col_min;                    
                 }
+                if (s->row>s->row_max) {
+                    s->row=s->row_min;
+                    // Seems to work like this (on cheap displays?)...
+                    //s->row=0;
+                }
+
+                //if (s->col>127) {
+                //    s->row++;
+                //    s->col=0;
+                //}
             //}
             s->redraw = 1;
         }
@@ -190,7 +211,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 // Column Address , 1-127
                 { 
                    DPRINTF("1306 Column addressing 0x%02x\n", data );
-                   s->cmd_state = SSD1306_CMD_SKIP1;
+                   s->cmd_state = SSD1306_COLUMN_ADRESSING2;
                     //s->col = 0;
                 }
                 break;
@@ -198,7 +219,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 // Page Address , 0-7
                 { 
                    DPRINTF("1306 Page addressing 0x%02x\n", data );
-                   s->cmd_state = SSD1306_CMD_SKIP1;
+                   s->cmd_state = SSD1306_ROW_ADRESSING2;
                    //s->col = 0;
 
                 }
@@ -276,6 +297,30 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
             }
 
             break;
+        case SSD1306_ROW_ADRESSING2:
+             DPRINTF("1306 ROW_ADRESSING2 0x%02x\n", data);
+            s->cmd_state = SSD1306_ROW_ADRESSING1;
+            s->row_min=data;
+            s->row=data;      
+            break;
+        case SSD1306_ROW_ADRESSING1:
+            DPRINTF("1306 ROW_ADRESSING1 0x%02x\n", data);
+            s->row_max=data;  
+            //s->col_min=s->col;
+            //s->col_max=s->col;    
+            break;
+
+        case SSD1306_COLUMN_ADRESSING2:
+             DPRINTF("1306 COLUMN_ADRESSING2 0x%02x\n", data);
+            s->cmd_state = SSD1306_COLUMN_ADRESSING1;
+            s->col_min=data;
+            s->col=data;      
+            break;
+        case SSD1306_COLUMN_ADRESSING1:
+            DPRINTF("1306 COLUMN_ADRESSING1 0x%02x\n", data);
+            s->col_max=data;      
+            break;
+
         case  SSD1306_CMD_SKIP2:
             DPRINTF("1306 skip2 0x%02x\n", data);
             s->cmd_state = SSD1306_CMD_SKIP1;
@@ -395,6 +440,11 @@ static const VMStateDescription vmstate_ssd1306 = {
     .fields = (VMStateField[]) {
         VMSTATE_INT32(row, ssd1306_state),
         VMSTATE_INT32(col, ssd1306_state),
+        VMSTATE_INT32(col, ssd1306_state),
+        VMSTATE_INT32(col_min, ssd1306_state),
+        VMSTATE_INT32(col_max, ssd1306_state),
+        VMSTATE_INT32(row_min, ssd1306_state),
+        VMSTATE_INT32(row_max, ssd1306_state),
         VMSTATE_INT32(start_line, ssd1306_state),
         VMSTATE_INT32(mirror, ssd1306_state),
         VMSTATE_INT32(flash, ssd1306_state),
@@ -425,6 +475,12 @@ static int ssd1306_init(I2CSlave *i2c)
 
     s->col=0;
     s->row=0;
+    s->col_max=127;
+    s->col_min=0;
+
+    s->row_max=7;
+    s->row_min=0;
+
     s->start_line=0;
     s->adressing_mode=SSD1306_PAGE;
 
