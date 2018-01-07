@@ -273,7 +273,7 @@ static uint64_t esp32_serial_read(void *opaque, hwaddr addr,
     case ESP32_UART_STATUS:
         DEBUG_LOG("%s: ESP32_UART_STATUS +0x%02x: \n", __func__, (uint32_t)addr);
         // return 0;
-        // TODO!! TODO!! Make read interrupt work for UARRTS!
+        // TODO!! TODO!! Make read interrupt work for UARTS!
         return esp32_serial_rx_fifo_size(s);
 
     case ESP32_UART_FIFO:
@@ -791,7 +791,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
 
             memcpy(&s->reg[data_w0],
                    s->flash_image + silly,  // ESP32_SPI_GET(s, ADDR, OFFSET)
-                   4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+                   4*16);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 /*
                     unsigned int *data=(unsigned int *)&s->reg[data_w0];
                     int j=0;
