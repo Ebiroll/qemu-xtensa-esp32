@@ -585,7 +585,8 @@ R_MAX = 0x100
 };
 
 // Redefing for SPI flash 
-//#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
+#undef DEBUG_LOG
+#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
 
 
 #define ESP32_SPI_FLASH_BITS(reg, field, shift, len) \
@@ -657,6 +658,8 @@ typedef struct Esp32SpiState {
     qemu_irq irq;
     void *flash_image;
     int length;
+    int write_mode;
+
     int wren;
 
     uint32_t reg[R_MAX];
@@ -699,6 +702,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
     if (val & 0x1000000) {
             DEBUG_LOG("esp32_spi_cmd_erase??? " PRIx64 "\n",val);
             unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+            DEBUG_LOG("erase addr %" PRIx64 "\n",write_addr);
             //write_addr=s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
 
         // Only allow spi0 to write to flash
@@ -762,17 +766,16 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
            if (s->wren==1) {
               s->reg[data_w0]=0x02; // WRITE ENABLED
            }
+           s->wren=1;
        }       
-       if (command==0x03 || command==0x3b) {
+       if (command==0x03 || command==0x3b || ESP32_SPI_GET(s, USER2, COMMAND_VALUE)==0xbb) {
            DEBUG_LOG("SPI_READ 0x03. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
            // TODO, ignore bit 0-7 !!!
            s->wren=0;
            // ESP32_SPI_GET(s, ADDR, OFFSET)
            unsigned int silly= s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
            DEBUG_LOG("Silly %08X\n",silly);
- /*           0x111f00 00
-            001111f0
-            
+ /*         
             unsigned int *data1=(unsigned int *)s->flash_image +silly;
             int q=0;
             for(q=0;q<16;q++) 
@@ -788,7 +791,7 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
 
             memcpy(&s->reg[data_w0],
                    s->flash_image + silly,  // ESP32_SPI_GET(s, ADDR, OFFSET)
-                   4*16);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+                   4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 /*
                     unsigned int *data=(unsigned int *)&s->reg[data_w0];
                     int j=0;
@@ -806,6 +809,14 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
        }
        if (command==0x02) {
            DEBUG_LOG("SPI_WRITE 0x02. %08X\n",ESP32_SPI_GET(s, ADDR, OFFSET));
+
+            //memcpy(s->flash_image + silly,
+            //                &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+            //                4*16);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+
+
+
        }
        /*
        if (command==0x02) {
@@ -828,7 +839,14 @@ static void esp32_spi_write_address(Esp32SpiState *s, hwaddr addr,
                                    uint64_t val, unsigned size)
 {
         s->reg[ESP32_SPI_FLASH_ADDR] = val;
-        //DEBUG_LOG("equal? %04X , %04X" , SPI_EXT2_REG*4,0xf8);
+        DEBUG_LOG("val? %04X " ,val);
+        if ((val & 0xff000000) > 0 ) {
+            DEBUG_LOG("WRITE_____________________? %04X " ,val);
+            s->write_mode=1;
+            s->length=(val & 0xff000000) >> 24; 
+        } else {
+            s->write_mode=0;
+        }
 
         DEBUG_LOG("Address %s: TX %08x[%d reserved]\n",
                   __func__,
@@ -840,6 +858,42 @@ static void esp32_spi_write_address(Esp32SpiState *s, hwaddr addr,
 
         
 }
+
+static void esp32_spi_write_user2(Esp32SpiState *s, hwaddr addr,
+                                   uint64_t val, unsigned size)
+{
+        s->reg[ESP32_SPI_FLASH_USER2] = val;
+        //DEBUG_LOG("equal? %04X , %04X" , SPI_EXT2_REG*4,0xf8);
+
+       int numBits=ESP32_SPI_GET(s, USER2, COMMAND_BITLEN);
+       int command=ESP32_SPI_GET(s, USER2, COMMAND_VALUE) & (( 1 << numBits) -1);
+       DEBUG_LOG("USER2 command %04x\n",command);
+       int length=s->reg[ESP32_MOSI_DLEN];
+       length= length  &  0x3c;
+       DEBUG_LOG("USER2 length %04x\n",length);
+
+       unsigned int write_addr=s->reg[ESP32_SPI_FLASH_ADDR] & 0x0fffffff;
+         //(void)write_addr;
+        //write_addr=write_addr >> 8;
+        DEBUG_LOG("USER2 address %"PRIx64 "\n",write_addr);
+
+        //if (command==0x05) {
+        //  s->wren=1;
+        //}
+
+#if 0
+       if (command==0x05) {
+
+            memcpy(s->flash_image + write_addr,
+                        &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+                        4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+
+       }
+#endif
+        
+}
+
 
 
 static void esp32_spi_write_ctrl(Esp32SpiState *s, hwaddr addr,
@@ -877,6 +931,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
                                     uint64_t val, unsigned size) = {
         [ESP32_SPI_FLASH_CMD] = esp32_spi_cmd,
         [ESP32_SPI_FLASH_ADDR] =esp32_spi_write_address,
+        [ESP32_SPI_FLASH_USER2] =esp32_spi_write_user2,
         [ESP32_SPI_FLASH_CTRL] = esp32_spi_write_ctrl,
         [ESP32_SPI_FLASH_STATUS] = esp32_spi_status,
         [ESP32_SPI_FLASH_CLOCK] = esp32_spi_clock,
@@ -884,6 +939,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
 
     if (addr>=0x80 && addr <= 0x9c) {
        unsigned int write_addr=ESP32_SPI_GET(s, ADDR, OFFSET);
+       write_addr=write_addr &  0x0fffffff;
        //write_addr=s->reg[ESP32_SPI_FLASH_ADDR] >> 8;
 
 #if 0
@@ -900,10 +956,10 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
            *data_ptr = (original[0] << 24  | original[1] << 16  |  original[2] << 8 |  original[3] << 0 );  
        }
 #endif    
-       int length=1+(addr-0x80)/4;
+       int regnum=(addr-0x80)/4;
 
        //if (addr==0x80)
-       if (true /*s->wren==1*/)
+       if (s->write_mode==1)
        {
          s->reg[addr / 4] = val;
          //unsigned int *set=(uint32_t)s->flash_image + (uint32_t)silly +(uint32_t)(addr-0x80);
@@ -914,19 +970,28 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
          }
 
          // Only clear 1:s not possible to set a 0 to 1
-         // However does not work. :-P
-         unsigned int *data=(unsigned int *)(s->flash_image + write_addr + length);
+         unsigned int *data=(unsigned int *)(s->flash_image + write_addr + regnum*4);
          unsigned int test=*data;
           test = ~test;
          unsigned int in_data=val;
 
-         DEBUG_LOG("------SPI 0 data written 0x%08x v=0x%08x now=0x%08x 0x%08x\n",length,val,*data,test & in_data);     
-         *data= test & in_data;
+         DEBUG_LOG("------SPI 0 data written 0x%08x v=0x%08x now=0x%08x 0x%08x\n",regnum,val,*data,write_addr);   // *data,test & in_data    
+                  
+        // Only clear 1:s not possible to set a 0 to 1
+         //*data= test & in_data;
+         *data=in_data;
+         DEBUG_LOG("now=0x%08x",*data);
+
+         s->length-=4;
+         DEBUG_LOG("len %d\n",s->length);
+         if (s->length<=0) {
+             s->write_mode=0;
+         }
 
          // We trust that data will be stored correctly
-         memcpy(s->flash_image + write_addr,
-            &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
-            length*4);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+         //memcpy(s->flash_image + write_addr,
+         //   &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+         //   length*4);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 
 
 
@@ -943,10 +1008,10 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
              return;
          }
 
-
-         memcpy(s->flash_image + write_addr,
-            &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
-            4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+         // Full 32 bytes
+         //memcpy(s->flash_image + write_addr,
+         //   &s->reg[data_w0],  // ESP32_SPI_GET(s, ADDR, OFFSET)
+         //   4*8);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
 
 
          DEBUG_LOG("SPI data written 0x%08x\n",write_addr);     
@@ -976,6 +1041,7 @@ static void esp32_spi_reset(void *opaque)
     Esp32SpiState *s = opaque;
 
     memset(s->reg, 0, sizeof(s->reg));
+    s->write_mode=0;
     //memory_region_set_enabled(&s->cache, false);
 
     //esp32_spi_irq_update(s);
