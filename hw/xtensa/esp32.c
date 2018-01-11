@@ -108,7 +108,7 @@ enum {
     ESP32_UART_INT_RAW,
     ESP32_UART_INT_ST,
     ESP32_UART_INT_ENA,
-    ESP32_UART_INT_CLR,
+    ESP32_UART_INT_CLR,  // 0x10
     ESP32_UART_CLKDIV,
     ESP32_UART_AUTOBAUD,
     ESP32_UART_STATUS,    //  ESP32_UART_txfifo_cnt = 0x1c/4,
@@ -195,9 +195,10 @@ static void esp32_serial_irq_update(Esp32SerialState *s)
     s->reg[ESP32_UART_INT_ST] |= s->reg[ESP32_UART_INT_RAW];
     //fprintf(stderr,"CHECKING IRQ\n");
 
-    if (s->uart_num==0 || s->uart_num==1 || (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA])) {
+    if ((s->uart_num==0 || s->uart_num==1) && (s->reg[ESP32_UART_INT_ST] & s->reg[ESP32_UART_INT_ENA])) {
         //fprintf(stderr,"RAISING IRQ\n");
         if (s->uart_num==0) {
+            //fprintf(stderr,"RAISING IRQ\n");
            qemu_irq_raise(uart0_irq);
         }
         else if (s->uart_num==1) {
@@ -209,6 +210,7 @@ static void esp32_serial_irq_update(Esp32SerialState *s)
         }
     } else {
         if (s->uart_num==0) {
+            //fprintf(stderr,"LOWER IRQ\n");
            qemu_irq_lower(uart0_irq);
         }
         else if (s->uart_num==1) {
@@ -391,8 +393,9 @@ static void esp_serial_timeout_cb(void *opaque)
       esp32_serial_rx_irq_update(s);
       s->start_timeout=now;
   }
-  //timer_mod_ns(s->timeout_timer,1000000000000);
 
+  // Slowdown timeout
+  timer_mod_ns(s->timeout_timer,1000000000000);
 }
 
 
@@ -402,13 +405,13 @@ static void esp32_serial_set_conf1(Esp32SerialState *s, hwaddr addr,
      DEBUG_LOG("%s: +0x%02x:  \n", __func__, (uint32_t)val);
 
     s->reg[ESP32_UART_CONF1] = val & 0xffffff;
-    if (s->reg[ESP32_UART_CONF1] && BIT(31)==BIT(31)) {
+    if ((s->reg[ESP32_UART_CONF1] & BIT(31))==BIT(31)) {
 
         DEBUG_LOG("%s: TIMEOUT +0x%02x:  \n", __func__, (uint32_t)val);
 
        s->start_timeout=qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
        s->timeout_timer=timer_new_ns(QEMU_CLOCK_REALTIME, &esp_serial_timeout_cb, s);
-       timer_mod_ns(s->timeout_timer,1000000000);
+       timer_mod_ns(s->timeout_timer,10000000000);  // WAS one 0 less
         
     }
 
