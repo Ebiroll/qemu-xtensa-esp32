@@ -66,6 +66,7 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include <poll.h>
 #include <error.h>
 #include "hw/i2c/i2c.h"
+#include "esp32_sha.h"
 
 // From Memorymapped.cpp
 extern const unsigned char* get_flashMemory(void );
@@ -1855,6 +1856,9 @@ static void esp_io_write(void *opaque, hwaddr addr,
 {
 
 Esp32 *esp32=(Esp32 *) opaque;
+static MemoryRegion *sha_io;
+MemoryRegion *system_memory = get_system_memory();
+
 
     // To handle i2c_set_pin
     if (addr>=0x44000 && addr<0x445cc) {
@@ -2076,6 +2080,20 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
 
         case 0x5F0:
+            exit(EXIT_FAILURE);
+             break;
+        case 0x5F1:
+            exit(EXIT_SUCCESS);
+             break;
+
+        case 0x5F2:
+                sha_io = g_malloc(sizeof(*sha_io));
+                memory_region_init_io(sha_io, NULL, &esp_sha_ops, esp32, "esp32.sha",
+                                           0x1000);
+                memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
+
+             break;
+             
             // TODO!! CHECK IF UNUSED, Just unpatches the rom patches
 /*
            printf(" OLAS_EMULATION_ROM_UNPATCH  3ff005F0\n");
@@ -2125,7 +2143,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
             }
 */
 
-           break;
+      
         case 0xcc:
            printf("EMAC_CLK_EN_REG %" PRIx64 "\n" ,val);
            // REG_SET_BIT(EMAC_CLK_EN_REG, EMAC_CLK_EN); 
@@ -2649,6 +2667,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem; // *gpio,
     static MemoryRegion *wifi_io;
 
+    static MemoryRegion *sha_io;
+
     DriveInfo *dinfo;
     pflash_t *flash = NULL;
     //pflash_t *flash2 = NULL;
@@ -2812,6 +2832,15 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
    Esp32WifiState *s = g_malloc(sizeof(Esp32WifiState));
 
+
+//// sha-ops
+   //sha_io = g_malloc(sizeof(*sha_io));
+   //memory_region_init_io(sha_io, NULL, &esp_sha_ops, s, "esp32.sha",
+   //                           0x80000);
+
+   //memory_region_add_subregion(system_memory, 0x60000000, wifi_io);
+
+///
 
    wifi_io = g_malloc(sizeof(*wifi_io));
    memory_region_init_io(wifi_io, NULL, &esp_wifi_ops, s, "esp32.wifi",
