@@ -11,7 +11,7 @@ typedef struct {
 
 #define MAX_SHA_BUFF 32*4
 // Bootloader only uses first 15 text registers..??
-#define SHA_BUFF_LEN 60
+#define SHA_BUFF_LEN 64
 
 
 typedef struct Esp32SHAState {

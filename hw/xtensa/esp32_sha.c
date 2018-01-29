@@ -179,7 +179,7 @@ void sha256_update(SHA256_CTX *ctx, const uchar *data, uint len)
 void sha256_final(SHA256_CTX *ctx, uchar hash[])
 {  
    uint i; 
-   
+#if 0
    i = ctx->datalen; 
    // Pad whatever data is left in the buffer. 
    if (ctx->datalen < 56) { 
@@ -205,7 +205,11 @@ void sha256_final(SHA256_CTX *ctx, uchar hash[])
    ctx->data[58] = ctx->bitlen[1] >> 8; 
    ctx->data[57] = ctx->bitlen[1] >> 16;  
    ctx->data[56] = ctx->bitlen[1] >> 24; 
+
    sha256_transform(ctx,ctx->data);
+
+#endif
+
 
 
    // Since this implementation uses little endian byte ordering and SHA uses big endian,
@@ -226,8 +230,17 @@ void sha256_final(SHA256_CTX *ctx, uchar hash[])
 void print_dump(unsigned char hash[])
 {
    int idx;
-   for (idx=0; idx < 64+32; idx++)
+   for (idx=0; idx < 64*2; idx++) {
       printf("%02x",hash[idx]);
+      if (idx%10==9) {
+          printf("\n");
+      }
+
+      if (idx%60==59) {
+          printf("\n");
+      }
+
+   }
    printf("\n");
 }
 
@@ -282,20 +295,20 @@ static void esp_sha_write(void *opaque, hwaddr addr,
             break;
 
         case 0x94:  // continue
-            printf("sha update 1\n"); 
+            printf("sha update 1 %2X\n",SHA_BUFF_LEN); 
             sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
             //sha256_update(&s->ctx,s->total_buffer,s->num_bits/8);
             //sha256_init(&s->ctx);
             break;
 
         case 0x98:  // load
-            printf("sha final %d %d\n",s->num_bits/8, s->max_buff_pos);
+            printf("sha final %d %d %d\n",s->ctx.datalen,s->num_bits/8, s->max_buff_pos);
             print_dump(s->total_buffer);
 
             // Saved buffer of all data 
-            sha256_init(&s->ctx);
-            sha256_update(&s->ctx,s->total_buffer,s->num_bits/8);
-            sha256_final(&s->ctx,s->hash_result);
+            //sha256_init(&s->ctx);
+            //sha256_update(&s->ctx,s->total_buffer,s->num_bits/8);
+            //sha256_final(&s->ctx,s->hash_result);
 
             s->max_buff_pos=0;
             s->total_buff_pos=0;
@@ -304,10 +317,11 @@ static void esp_sha_write(void *opaque, hwaddr addr,
             //s->num_bits 
             //print_dump(s->total_buffer);
             //sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
-            //sha256_final(&s->ctx,s->hash_result);
+            sha256_final(&s->ctx,s->hash_result);
 
-            //sha256_init(&s->ctx);
-            //printf("sha init 1\n"); 
+            sha256_init(&s->ctx);
+            //memset(ctx->data,0,56); 
+            printf("sha init 1\n"); 
  
 
             break;
