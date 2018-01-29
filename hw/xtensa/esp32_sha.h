@@ -22,7 +22,7 @@ typedef struct Esp32SHAState {
     unsigned char buffer_data[MAX_SHA_BUFF];
     // MAx 4 MB, total buffer
     int total_buff_pos;
-    int num_bits;
+    uint64_t num_bits;
     unsigned char total_buffer[1024*1024*4];
     unsigned char hash_result[MAX_SHA_BUFF];
 } Esp32SHAState;
