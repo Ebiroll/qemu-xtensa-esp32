@@ -223,19 +223,93 @@ void sha256_final(SHA256_CTX *ctx, uchar hash[])
 }  
 
 
+void print_dump(unsigned char hash[])
+{
+   int idx;
+   for (idx=0; idx < 64+32; idx++)
+      printf("%02x",hash[idx]);
+   printf("\n");
+}
 
 static void esp_sha_write(void *opaque, hwaddr addr,
         uint64_t val, unsigned size)
 {
     Esp32SHAState *s=opaque;
 
+    if (s->initiated!=0x47) {
+        printf("sha init 0\n");
+        sha256_init(&s->ctx);
+        s->initiated=0x47;
+        s->max_buff_pos=0;
+        s->total_buff_pos=0;
+    }
+
     printf("sha write 0x%" PRIx64 " \n",addr);
     if (addr<MAX_SHA_BUFF) {
         if (s->max_buff_pos<addr) {
-            s->max_buff_pos=addr;
+            s->max_buff_pos=addr/4;
         }
+        s->num_bits=val & 0xffff;
+        int b_pos=addr;
+        s->buffer_data[b_pos+3]=0xff & (val & 0x000000ff);
+        s->buffer_data[b_pos+2]=0xff & ((val & 0x0000ff00) >> 8);
+        s->buffer_data[b_pos+1]=0xff & ((val & 0x00ff0000) >> 16);
+        s->buffer_data[b_pos+0]=0xff & ((val & 0xff000000) >> 24);
+        s->total_buffer[s->total_buff_pos+0]=s->buffer_data[b_pos+0];
+        s->total_buffer[s->total_buff_pos+1]=s->buffer_data[b_pos+1];
+        s->total_buffer[s->total_buff_pos+2]=s->buffer_data[b_pos+2];
+        s->total_buffer[s->total_buff_pos+3]=s->buffer_data[b_pos+3];
+        s->total_buff_pos+=4;
+
+        printf("sha val 0x%x\n",s->buffer_data[b_pos]);
+        printf("sha val 0x%x\n",s->buffer_data[b_pos+1]);
+        printf("sha val 0x%x\n",s->buffer_data[b_pos+2]);
+        printf("sha val 0x%x\n",s->buffer_data[b_pos+3]);
     }
 
+    switch (addr)
+    {
+        case 0x90:  // Start
+            printf("sha init 1\n"); 
+            sha256_init(&s->ctx);
+            //sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
+            break;
+
+        case 0x94:  // continue
+            printf("sha update 1\n"); 
+            sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
+            //sha256_update(&s->ctx,s->total_buffer,s->num_bits/8);
+            //sha256_init(&s->ctx);
+            break;
+
+        case 0x98:  // load
+            printf("sha final %d\n",s->num_bits/8);
+            print_dump(s->total_buffer);
+
+            // Saved buffer of all data 
+            sha256_init(&s->ctx);
+            sha256_update(&s->ctx,s->total_buffer,s->num_bits/8);
+            sha256_final(&s->ctx,s->hash_result);
+
+            s->max_buff_pos=0;
+            s->total_buff_pos=0;
+            
+            // This would have been better, but does not work so well :-P
+            //s->num_bits 
+            //print_dump(s->total_buffer);
+            //sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
+            //sha256_final(&s->ctx,s->hash_result);
+
+            break;
+
+
+        case 0x9c:  // 
+            return 0;
+            break;
+        default:
+         return 0;
+            break;
+    }
 }
 
 static uint64_t esp_sha_read(void *opaque, hwaddr addr,
@@ -246,16 +320,24 @@ static uint64_t esp_sha_read(void *opaque, hwaddr addr,
 
     printf("sha read 0x%" PRIx64 " \n",addr);
 
+    if (addr<=MAX_SHA_BUFF) {
+        uint64_t b_pos=addr;
+        uint64_t ret= (s->hash_result[b_pos+3]) + ((s->hash_result[b_pos+2]) << 8) + ((s->hash_result[b_pos+1]) << 16) + ((s->hash_result[b_pos+0]) << 24);
+        printf("sha val 0x%" PRIx64 " \n",ret);
+
+        return ret;
+    }
+
     switch (addr) {
-        case 0x09:
-        return 0;
+        case 0x90:
+          return 0;
         break;
         case 0x9c:
-        return 0;
+          return 0;
         break;
 
         default:
-        return 0xffffffff;
+         return 0x1111111111;
         break;
     }
 

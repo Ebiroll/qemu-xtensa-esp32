@@ -2087,10 +2087,14 @@ if (addr>=0x12000 && addr<0x13ffc) {
              break;
 
         case 0x5F2:
+            {
+
+                Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
                 sha_io = g_malloc(sizeof(*sha_io));
-                memory_region_init_io(sha_io, NULL, &esp_sha_ops, esp32, "esp32.sha",
+                memory_region_init_io(sha_io, NULL, &esp_sha_ops, sha_state, "esp32.sha",
                                            0x1000);
                 memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
+            }
 
              break;
              
@@ -2830,17 +2834,19 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     memory_region_add_subregion(system_memory, 0x3ff00000, system_io);
 
 
-   Esp32WifiState *s = g_malloc(sizeof(Esp32WifiState));
-
 
 //// sha-ops
-   //sha_io = g_malloc(sizeof(*sha_io));
-   //memory_region_init_io(sha_io, NULL, &esp_sha_ops, s, "esp32.sha",
-   //                           0x80000);
-
-   //memory_region_add_subregion(system_memory, 0x60000000, wifi_io);
+// When sha hardware acceleration works, this can be used
+    //Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
+    //sha_io = g_malloc(sizeof(*sha_io));
+    // memory_region_init_io(sha_io, NULL, &esp_sha_ops, sha_state, "esp32.sha",
+    //              0x1000);
+    //memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
 
 ///
+
+
+   Esp32WifiState *s = g_malloc(sizeof(Esp32WifiState));
 
    wifi_io = g_malloc(sizeof(*wifi_io));
    memory_region_init_io(wifi_io, NULL, &esp_wifi_ops, s, "esp32.wifi",
