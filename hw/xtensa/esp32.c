@@ -2082,11 +2082,11 @@ if (addr>=0x12000 && addr<0x13ffc) {
         case 0x5F0:
             exit(EXIT_FAILURE);
              break;
-        case 0x5F1:
+        case 0x5F4:
             exit(EXIT_SUCCESS);
              break;
 
-        case 0x5F2:
+        case 0x5F8:
             {
 
                 Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
