@@ -2837,11 +2837,11 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
 //// sha-ops
 // When sha hardware acceleration works, this can be used
-    //Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
-    //sha_io = g_malloc(sizeof(*sha_io));
-    // memory_region_init_io(sha_io, NULL, &esp_sha_ops, sha_state, "esp32.sha",
-    //              0x1000);
-    //memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
+    Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
+    sha_io = g_malloc(sizeof(*sha_io));
+     memory_region_init_io(sha_io, NULL, &esp_sha_ops, sha_state, "esp32.sha",
+                 0x1000);
+   memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
 
 ///
 

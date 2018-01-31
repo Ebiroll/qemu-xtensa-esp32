@@ -338,7 +338,7 @@ extern "C" const unsigned char* get_flashMemory()
    return (memfile->getData());
  }
 
- fprintf(stderr,"TRYING to MAP esp32flash.bin");
+ //fprintf(stderr,"TRYING to MAP esp32flash.bin");
 
 
   int X = 4 * 1024 * 1024 ;
@@ -361,7 +361,7 @@ extern "C" const unsigned char* get_flashMemory()
   memfile=new MemoryMapped(FLASH_FILENAME);
 
   if (memfile!=NULL) {
-   fprintf(stderr,"MAPPED esp32flash.bin");
+   //fprintf(stderr,"MAPPED esp32flash.bin");
    unsigned int *data=(unsigned int *)memfile->getData();
    for(int j=0;j<1024;j++) 
    {
