@@ -983,7 +983,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
                   
         // Only clear 1:s not possible to set a 0 to 1
          //*data= test & in_data;
-         if (data < s->flash_image + 0x400000) {
+         if (data < (s->flash_image + 4*1024*1024)) {
              *data=in_data;
              DEBUG_LOG("now=0x%08x",*data);
 
@@ -994,7 +994,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
              }
 
          } else {
-             fprintf(stderr,"SPI WRITE OUTSIDE FLASH END%X \n",write_addr + regnum*4);
+             fprintf(stderr,"SPI WRITE OUTSIDE FLASH END %X \n",write_addr + regnum*4);
          }
          // We trust that data will be stored correctly
          //memcpy(s->flash_image + write_addr,
