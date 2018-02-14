@@ -33,11 +33,14 @@ Dont do in source builds, try mkdir qemu_esp32
 From here  https://github.com/bztsrc/qemu-raspi3
 https://github.com/bztsrc/qemu-raspi3/tree/patches
 https://www.raspberrypi.org/forums/viewtopic.php?f=72&t=195565&sid=273f86dd05fa186e3c690cf065a37c78&start=25
+wget https://github.com/bztsrc/raspi3-tutorial/raw/master/09_framebuffer/kernel8.img
 
-    ./configure --target-list=aarch64-softmmu --enable-modules --enable-tcg-interpreter --enable-debug-tcg --python=/usr/bin/python2.7
+    ../qemu-xtensa-esp32/configure --target-list=aarch64-softmmu --enable-modules --enable-tcg-interpreter --enable-debug-tcg --disable-werror --python=/usr/bin/python2.7
 make -j4
 
     qemu-system-aarch64 -M raspi3 -kernel kernel8.img -serial stdio
+
+Note sure that this works in this tree, need to doublecheck the patches
 
 __NOTE: This is very much a work-in-progress! Only some of the peripherals are working at the moment. Please contribute!__
 
