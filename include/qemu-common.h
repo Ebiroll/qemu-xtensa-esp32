@@ -11,6 +11,7 @@
  */
 #ifndef QEMU_COMMON_H
 #define QEMU_COMMON_H
+#include "qemu/bcd.h"
 
 #include "qemu/fprintf-fn.h"
 

@@ -75,6 +75,8 @@ struct SysBusDevice {
     uint32_t pio[QDEV_MAX_PIO];
 };
 
+/* Macros to compensate for lack of type inheritance in C.  */
+#define FROM_SYSBUS(type, dev) DO_UPCAST(type, busdev, dev)
 typedef int FindSysbusDeviceFunc(SysBusDevice *sbdev, void *opaque);
 
 void sysbus_init_mmio(SysBusDevice *dev, MemoryRegion *memory);

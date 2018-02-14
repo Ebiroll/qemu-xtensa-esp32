@@ -337,7 +337,8 @@ static void arm_cpu_set_irq(void *opaque, int irq, int level)
         [ARM_CPU_IRQ] = CPU_INTERRUPT_HARD,
         [ARM_CPU_FIQ] = CPU_INTERRUPT_FIQ,
         [ARM_CPU_VIRQ] = CPU_INTERRUPT_VIRQ,
-        [ARM_CPU_VFIQ] = CPU_INTERRUPT_VFIQ
+        [ARM_CPU_VFIQ] = CPU_INTERRUPT_VFIQ,
+        [ARM_CPU_WKUP] = CPU_INTERRUPT_WKUP
     };
 
     switch (irq) {
@@ -347,6 +348,7 @@ static void arm_cpu_set_irq(void *opaque, int irq, int level)
         /* fall through */
     case ARM_CPU_IRQ:
     case ARM_CPU_FIQ:
+    case ARM_CPU_WKUP:
         if (level) {
             cpu_interrupt(cs, mask[irq]);
         } else {

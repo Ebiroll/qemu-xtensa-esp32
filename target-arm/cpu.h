@@ -52,7 +52,8 @@
 #define EXCP_SMC            13   /* Secure Monitor Call */
 #define EXCP_VIRQ           14
 #define EXCP_VFIQ           15
-#define EXCP_SEMIHOST       16   /* semihosting call (A64 only) */
+#define EXCP_WKUP           16   /* Wakeup from standby mode */
+#define EXCP_SEMIHOST       17   /* semihosting call (A64 only) */
 
 #define ARMV7M_EXCP_RESET   1
 #define ARMV7M_EXCP_NMI     2
@@ -69,6 +70,7 @@
 #define CPU_INTERRUPT_FIQ   CPU_INTERRUPT_TGT_EXT_1
 #define CPU_INTERRUPT_VIRQ  CPU_INTERRUPT_TGT_EXT_2
 #define CPU_INTERRUPT_VFIQ  CPU_INTERRUPT_TGT_EXT_3
+#define CPU_INTERRUPT_WKUP  CPU_INTERRUPT_TGT_EXT_4  /* Wake up without any interrupt */
 
 /* The usual mapping for an AArch64 system register to its AArch32
  * counterpart is for the 32 bit world to have access to the lower
@@ -89,6 +91,9 @@
 #define ARM_CPU_FIQ 1
 #define ARM_CPU_VIRQ 2
 #define ARM_CPU_VFIQ 3
+#define ARM_CPU_WKUP 4
+
+struct arm_boot_info;
 
 #define NB_MMU_MODES 7
 /* ARM-specific extra insn start words:
@@ -408,6 +413,14 @@ typedef struct CPUARMState {
         uint32_t control;
         int current_sp;
         int exception;
+//STM32
+        uint32_t ccr;
+        uint32_t cfsr;
+        uint32_t hfsr;
+        uint32_t dfsr;
+        uint32_t mmfar;
+        uint32_t bfar;
+        uint32_t mpu_ctrl;
     } v7m;
 
     /* Information associated with an exception about to be taken:
@@ -1080,6 +1093,55 @@ enum arm_cpu_mode {
 #define ARM_IWMMXT_wCGR2	10
 #define ARM_IWMMXT_wCGR3	11
 
+/* V7M CCSR bits */
+#define CCR_STKALIGN        0x00000200
+#define CCR_BFHFNMIGN       0x00000100
+#define CCR_DIV_0_TRP       0x00000010
+#define CCR_UNALIGN_TRP     0x00000008
+#define CCR_USERSETMPEND    0x00000002
+#define CCR_NONBASETHRDENA  0x00000001
+
+/* V7M CFSR bits for UFSR */
+#define CFSR_DIVBYZERO      0x02000000
+#define CFSR_UNALIGNED      0x01000000
+#define CFSR_NOCP           0x00080000
+#define CFSR_INVPC          0x00040000
+#define CFSR_INVSTATE       0x00020000
+#define CFSR_UNDEFINSTR     0x00010000
+
+/* V7M CFSR bits for BFSR */
+#define CFSR_BFARVALID      0x00008000
+#define CFSR_LSPERR         0x00002000
+#define CFSR_STKERR         0x00001000
+#define CFSR_UNSTKERR       0x00000800
+#define CFSR_IMPRECISERR    0x00000400
+#define CFSR_PRECISERR      0x00000200
+#define CFSR_IBUSERR        0x00000100
+
+/* V7M CFSR bits for MMFSR */
+#define CFSR_MMARVALID      0x00000080
+#define CFSR_MLSPERR        0x00000020
+#define CFSR_MSTKERR        0x00000010
+#define CFSR_MUNSTKERR      0x00000008
+#define CFSR_DACCVIOL       0x00000002
+#define CFSR_IACCVIOL       0x00000001
+
+/* V7M HFSR bits */
+#define HFSR_DEBUG_VT       0x80000000
+#define HFSR_FORCED         0x40000000
+#define HFSR_VECTTBL        0x00000002
+
+/* V7M DFSR bits */
+#define DFSR_EXTERNAL       0x00000010
+#define DFSR_VCATCH         0x00000008
+#define DFSR_DWTTRAP        0x00000004
+#define DFSR_BKPT           0x00000002
+#define DFSR_HALTED         0x00000001
+
+/* V7M MPU_CTRL bits */
+#define MPU_CTRL_PRIVDEFENA 0x00000004
+#define MPU_CTRL_HFNMIENA   0x00000002
+#define MPU_CTRL_ENABLE     0x00000001
 /* If adding a feature bit which corresponds to a Linux ELF
  * HWCAP bit, remember to update the feature-bit-to-hwcap
  * mapping in linux-user/elfload.c:get_elf_hwcap().
@@ -1275,6 +1337,11 @@ uint32_t arm_phys_excp_target_el(CPUState *cs, uint32_t excp_idx,
 void armv7m_nvic_set_pending(void *opaque, int irq);
 int armv7m_nvic_acknowledge_irq(void *opaque);
 void armv7m_nvic_complete_irq(void *opaque, int irq);
+void armv7m_nvic_set_base_priority(void *opaque, unsigned int priority);
+void armv7m_nvic_cpu_executed_wfi(void *opaque);
+
+/* Interface between interrupt controller and power controller */
+bool f2xx_pwr_powerdown_deepsleep(void *opaqe);
 
 /* Interface for defining coprocessor registers.
  * Registers are defined in tables of arm_cp_reginfo structs

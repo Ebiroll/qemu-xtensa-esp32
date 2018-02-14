@@ -6,3 +6,5 @@ common-obj-$(CONFIG_ASPEED_SOC) += aspeed_smc.o
 
 obj-$(CONFIG_OMAP) += omap_spi.o
 obj-$(CONFIG_IMX) += imx_spi.o
+obj-$(CONFIG_STM32) += stm32f2xx_spi.o
+obj-$(CONFIG_STM32) += stm32f412_qspi.o

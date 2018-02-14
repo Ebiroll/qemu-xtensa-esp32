@@ -226,6 +226,7 @@ static int ssd1306_send(I2CSlave *i2c, uint8_t data)
                 break;
 
             case 0x40 ... 0x7f: /* Set start line.  */
+                 DPRINTF("1306 segment map 0x%02x\n", data );
                 s->start_line = 0;
                 break;
             case 0x81: /* Set contrast (Ignored).  */

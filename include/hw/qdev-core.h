@@ -146,6 +146,7 @@ typedef struct NamedGPIOList NamedGPIOList;
 struct NamedGPIOList {
     char *name;
     qemu_irq *in;
+    qemu_irq *out;
     int num_in;
     int num_out;
     QLIST_ENTRY(NamedGPIOList) node;
