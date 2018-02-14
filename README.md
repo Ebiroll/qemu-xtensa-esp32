@@ -1,6 +1,7 @@
 # ESP32 & Pebble Smartwatch QEMU Implementation
 
 To learn about ARM and STM32
+
 ./qemu-system-arm   -serial file:uart1.log -serial tcp::12344,server,nowait -serial tcp::12345,server,nowait -monitor stdio -machine pebble-bb2  -cpu cortex-m3 -S -s  -pflash .pioenvs/rak811/firmware.bin
 
 
@@ -10,7 +11,33 @@ STM32F2xx microcontroller.
 This is based off of a QEMU fork that is targeting the STM32F103: https://github.com/beckus/qemu_stm32.
 This repo contains both beckus' STM32F1xx implementation and Pebble's STM32F2xx additions.
 
-__DANGER DANGER: It is very much a work-in-progress! Only some of the peripherals are working at the moment. Please contribute!__
+# Configure for  ESP32
+Dont do in source builds, try mkdir qemu_esp32
+    
+    ../qemu-xtensa-esp32/configure --disable-werror --prefix=`pwd`/root --target-list=xtensa-softmmu,xtensaeb-softmmu
+
+
+# Configure for STM32 boards
+
+    mkdir arm_stm32;cd arm_stm32
+    ../qemu-xtensa-esp32/configure --disable-werror --enable-debug --target-list="arm-softmmu"         --extra-cflags=-DSTM32_UART_NO_BAUD_DELAY
+
+    git submodule update --init dtc
+
+
+# If python3 is default on your system
+    --python=/usr/bin/python2
+
+
+# Raspberry pi 3 emulation  
+From here  https://github.com/bztsrc/qemu-raspi3
+
+    ./configure --target-list=aarch64-softmmu --enable-modules --enable-tcg-interpreter --enable-debug-tcg --python=/usr/bin/python2.7
+make -j4
+
+    qemu-system-aarch64 -M raspi3 -kernel kernel8.img
+
+__NOTE: This is very much a work-in-progress! Only some of the peripherals are working at the moment. Please contribute!__
 
 ## Dependencies
 QEMU requires that development packages for glib20 and pixman are installed.
@@ -27,7 +54,7 @@ Install the `devel/glib20` and `x11/pixman` ports.
 ## Building
 Commands for a typical build:
 
-        ./configure --disable-werror --enable-debug --target-list="arm-softmmu" \
+        ../qemu-xtensa-esp32/configure --disable-werror --enable-debug --target-list="arm-softmmu" 
         --extra-cflags=-DSTM32_UART_NO_BAUD_DELAY
         make
 
@@ -40,7 +67,7 @@ Summary set of configure options that are useful when developing (tested only on
         --extra-cflags=-DDEBUG_STM32_UART --extra-cflags=-DSTM32_UART_NO_BAUD_DELAY \
         --extra-cflags=-DDEBUG_GIC 
         
-####Configure options which control the STM32 implementation:
+#### Configure options which control the STM32 implementation:
 
     --extra-cflags=-DDEBUG_CLKTREE
         Print out clock tree debug statements.

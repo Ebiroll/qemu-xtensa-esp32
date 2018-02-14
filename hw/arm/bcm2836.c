@@ -15,6 +15,7 @@
 #include "hw/arm/bcm2836.h"
 #include "hw/arm/raspi_platform.h"
 #include "hw/sysbus.h"
+#include "hw/boards.h"
 #include "exec/address-spaces.h"
 
 /* Peripheral base address seen by the CPU */

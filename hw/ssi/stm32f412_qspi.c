@@ -232,7 +232,8 @@ stm32f412_CCR_write(Stm32f412Qspi *s, uint32_t CCR, unsigned size)
 static void
 stm32f412_qspi_xfer(Stm32f412Qspi *s, uint32_t data, unsigned size)
 {
-  for (int i = 0; i < size; ++i) {
+  int i;
+  for (i = 0; i < size; ++i) {
     uint8_t val = (data >> (i*8)) & 0xff;
     ssi_transfer(s->qspi, val);
   }

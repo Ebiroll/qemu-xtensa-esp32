@@ -566,7 +566,8 @@ static void ps_display_cmd_set_2_unscramble_row(PSDisplayGlobals *s, uint32_t ro
     // MSB2 contains the following bits:
     //  0 0 r3_msb r2_msb g3_msb g2_msb b3_msb b2_msb
     //
-    for (int col_idx = 0; col_idx < line_bytes; col_idx += 2) {
+    int col_idx = 0;
+    for (col_idx = 0; col_idx < line_bytes; col_idx += 2) {
         const uint8_t ms_bits = row_buffer[col_idx / 2];
         const uint8_t ls_bits = row_buffer[col_idx / 2 + line_bytes / 2];
 
