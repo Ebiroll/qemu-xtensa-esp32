@@ -111,9 +111,9 @@ static void stm32_syscfg_SYSCFG_EXTICR_write(Stm32Syscfg *s, unsigned index,
                 continue;
             }
             // OLAS TODO!!! Index out of range??
-            //stm32_exti_reset_gpio(s->stm32_exti, exti_line, old_gpio_index);
+            stm32_exti_reset_gpio(s->stm32_exti, exti_line, old_gpio_index);
         }
-        //stm32_exti_set_gpio(s->stm32_exti, exti_line, new_gpio_index);
+        stm32_exti_set_gpio(s->stm32_exti, exti_line, new_gpio_index);
     }
     s->SYSCFG_EXTICR[index] = new_value;
 }
