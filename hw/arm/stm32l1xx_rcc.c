@@ -53,6 +53,7 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
         stm32_unimp("STM32f2xx_rcc: unimplemented register: 0x%x", (int)offset)
 
 #define HSI_FREQ 16000000
+#define MSI_FREQ 16000000
 #define LSI_FREQ 32000
 
 #define RCC_CR_RESET_VALUE      0x00000083
@@ -848,7 +849,9 @@ static void stm32_rcc_init_clk(Stm32lixxRcc *s)
      * a disabled oscillator.  Enabling the clock represents
      * turning the clock on.
      */
-    s->HSICLK = clktree_create_src_clk("HSI", HSI_FREQ, false);
+    s->HSICLK = clktree_create_src_clk("HSI", MSI_FREQ, false);
+    s->MSICLK = clktree_create_src_clk("MSI", HSI_FREQ, false);
+
     s->LSICLK = clktree_create_src_clk("LSI", LSI_FREQ, false);
     s->HSECLK = clktree_create_src_clk("HSE", s->osc_freq, false);
     s->LSECLK = clktree_create_src_clk("LSE", s->osc32_freq, false);

@@ -568,6 +568,6 @@ struct stm32l1xx_t;
                 DeviceState **stm32_rtc,
                 uint32_t osc_freq,
                 uint32_t osc32_freq,
-                struct stm32l1xx_t *stm,
+                struct stm32f2xx *stm,
                 ARMCPU **cpu);
 #endif /* STM32_H */

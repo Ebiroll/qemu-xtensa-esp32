@@ -33,6 +33,7 @@
 #include "ui/console.h"
 #include "rak811.h"
 #include "stm32l1xx.h"
+#include "stm32f2xx.h"
 
 
 //#define DEBUG_RAK811
@@ -267,7 +268,7 @@ static void rak811_32l1_init(MachineState *machine, const PblBoardConfig *board_
     DeviceState *spi_flash;
     DeviceState *rtc_dev;
     SSIBus *spi;
-    stm32l1xx_t stm;
+    struct stm32f2xx stm;
     ARMCPU *cpu;
 
     // Note: allow for bigger flash images (4MByte) to aid in development and debugging
@@ -395,7 +396,7 @@ static void rak811_board_class_init(ObjectClass *klass, void *data)
 }
 
 static const TypeInfo rak811_board_info = {
-    .name          = "rak811",
+    .name          = "rak811_board",
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(PebbleBoard),
     .class_init    = rak811_board_class_init,

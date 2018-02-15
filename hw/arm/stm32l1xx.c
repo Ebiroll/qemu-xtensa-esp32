@@ -106,7 +106,7 @@ void stm32l1xx_init(
             DeviceState **stm32_rtc,
             uint32_t osc_freq,
             uint32_t osc32_freq,
-            struct stm32l1xx_t *stm,
+            struct stm32f2xx *stm,
             ARMCPU **cpu)
 {
     MemoryRegion *address_space_mem = get_system_memory();
@@ -237,7 +237,8 @@ void stm32l1xx_init(
         {0x40003800, STM32_SPI2_IRQ},
         {0x40003CD0, STM32_SPI3_IRQ},
     };
-    /* OLAS SPI!!! TODO
+
+    // OLAS dereferencing pointer to incomplete type, row 244
     for (i = 0; i < ARRAY_LENGTH(spi_desc); ++i) {
         const stm32_periph_t periph = STM32_SPI1 + i;
         stm->spi_dev[i] = qdev_create(NULL, "stm32f2xx_spi");
@@ -247,7 +248,6 @@ void stm32l1xx_init(
           qdev_get_gpio_in(nvic, spi_desc[i].irq_idx));
 
     }
-    */
 
 //    stm32_uart[STM32_UART1_INDEX] = stm32_create_uart_dev(STM32_UART1, rcc_dev, gpio_dev, afio_dev, 0x40011000, qdev_get_gpio_in(nvic, STM32_UART1_IRQ]);
 //    stm32_uart[STM32_UART2_INDEX] = stm32_create_uart_dev(STM32_UART2, rcc_dev, gpio_dev, afio_dev, 0x40004400, qdev_get_gpio_in(nvic, STM32_UART2_IRQ]);
