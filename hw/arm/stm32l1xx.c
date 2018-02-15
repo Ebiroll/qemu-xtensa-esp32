@@ -176,7 +176,7 @@ void stm32l1xx_init(
     /* EXTI */
     DeviceState *exti_dev = qdev_create(NULL, "stm32_exti");
     qdev_prop_set_ptr(exti_dev, "stm32_gpio", gpio_dev);
-    stm32_init_periph(exti_dev, STM32_EXTI_PERIPH, 0x40013C00, NULL);
+    stm32_init_periph(exti_dev, STM32_EXTI_PERIPH, 0x40010400, NULL); 
     SysBusDevice *exti_busdev = SYS_BUS_DEVICE(exti_dev);
     /* IRQs from EXTI to NVIC */
     sysbus_connect_irq(exti_busdev, 0, qdev_get_gpio_in(nvic, STM32_EXTI0_IRQ));
@@ -205,11 +205,11 @@ void stm32l1xx_init(
         uint32_t addr;
         uint8_t irq_idx;
     } const uart_desc[] = {
-        {0x40011000, STM32_UART1_IRQ},
+        {0x40013800, STM32_UART1_IRQ},
         {0x40004400, STM32_UART2_IRQ},
-        {0x40004800, STM32_UART3_IRQ},
-//        {0x40004C00, STM32_UART4_IRQ},
-//       {0x40005000, STM32_UART5_IRQ},
+        {0x40004800, STM32_UART3_IRQ}, 
+        {0x40004C00, STM32_UART4_IRQ},
+        {0x40005000, STM32_UART5_IRQ},
 //       {0x40011400, STM32_UART6_IRQ},
     };
     for (i = 0; i < ARRAY_LENGTH(uart_desc); ++i) {
@@ -337,6 +337,7 @@ void stm32l1xx_init(
     stm32_init_periph(i2c2, STM32_I2C2, 0x40005800, qdev_get_gpio_in(nvic, STM32_I2C2_EV_IRQ));
     sysbus_connect_irq(SYS_BUS_DEVICE(i2c2), 1, qdev_get_gpio_in(nvic, STM32_I2C2_ER_IRQ));
 
+    // NOT uesd by this chip 
     DeviceState *i2c3 = qdev_create(NULL, "f2xx_i2c");
     i2c3->id = stm32l1xx_periph_name_arr[STM32_I2C3];
     qdev_prop_set_int32(i2c3, "periph", STM32_I2C3);
@@ -344,8 +345,8 @@ void stm32l1xx_init(
     sysbus_connect_irq(SYS_BUS_DEVICE(i2c3), 1, qdev_get_gpio_in(nvic, STM32_I2C3_ER_IRQ));
 
     dummy_dev("Reserved",  0x40006000, 0x400);
-    dummy_dev("BxCAN1",    0x40006400, 0x400);
-    dummy_dev("BxCAN2",    0x40006800, 0x400);
+    //dummy_dev("BxCAN1",    0x40006400, 0x400);
+    //dummy_dev("BxCAN2",    0x40006800, 0x400);
     dummy_dev("Reserved",  0x40006C00, 0x400);
     // PWR
     dummy_dev("DAC1/DAC2", 0x40007400, 0x400);
