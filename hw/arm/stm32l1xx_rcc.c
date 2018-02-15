@@ -36,10 +36,12 @@
 #define DEBUG_STM32_RCC 1
 
 #ifdef DEBUG_STM32_RCC
+#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
 #define DPRINTF(fmt, ...)                                       \
 do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...)
+#define DEBUG_LOG(...)
 #endif
 
 #define IS_RESET_VALUE(new_value, mask, reset_value) ((new_value & mask) == (mask & reset_value))
@@ -55,6 +57,24 @@ do { printf("STM32F2XX_RCC: " fmt , ## __VA_ARGS__); } while (0)
 #define HSI_FREQ 16000000
 #define MSI_FREQ 16000000
 #define LSI_FREQ 32000
+
+char *reg_name[] = {
+     "RCC->CR",
+     "RCC->ICSCR",
+     "RCC->CFGR",
+     "RCC->CIR",
+     "RCC->AHBRSTR",
+     "RCC->AHB2RSTR",
+     "RCC->AHB1RSTR",
+     "RCC->AHBENR",    
+     "RCC->APB2ENR", 
+     "RCC->APB1ENR",
+     "RCC->AHBLPENR",
+     "RCC->APB2LPENR",
+     "RCC->0x30",
+     "RCC->CSR"
+};
+
 
 #define RCC_CR_RESET_VALUE      0x00000083
 #define RCC_CR_OFFSET           0x00
@@ -684,6 +704,8 @@ static uint64_t stm32_rcc_readw(void *opaque, hwaddr offset)
 {
     Stm32lixxRcc *s = (Stm32lixxRcc *)opaque;
 
+    DEBUG_LOG("%s: %s +0x%02x: \n", __func__, reg_name[offset/4], (uint32_t)offset);
+
     switch (offset) {
         case RCC_CR_OFFSET:
             return stm32_rcc_RCC_CR_read(s);
@@ -723,6 +745,9 @@ static void stm32_rcc_writew(void *opaque, hwaddr offset,
                              uint64_t value)
 {
     Stm32lixxRcc *s = (Stm32lixxRcc *)opaque;
+
+
+    DEBUG_LOG("%s: %s +0x%02x: 0x%02X\n", __func__,reg_name[offset/4], (uint32_t)offset, (uint32_t)value);
 
     switch(offset) {
         case RCC_CR_OFFSET:

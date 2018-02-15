@@ -36,9 +36,9 @@ static const char *stm32l1xx_periph_name_arr[] = {
     ENUM_STRING(STM32_UART1),
     ENUM_STRING(STM32_UART2),
     ENUM_STRING(STM32_UART3),
-    //ENUM_STRING(STM32_UART4),
-    //ENUM_STRING(STM32_UART5),
-    //ENUM_STRING(STM32_UART6),
+    ENUM_STRING(STM32_UART4),
+    ENUM_STRING(STM32_UART5),
+    ENUM_STRING(STM32_UART6),
 
     ENUM_STRING(STM32_SPI1),
     ENUM_STRING(STM32_SPI2),
@@ -60,8 +60,8 @@ static const char *stm32l1xx_periph_name_arr[] = {
     ENUM_STRING(STM32_TIM10),
     ENUM_STRING(STM32_TIM11),
     ENUM_STRING(STM32_TIM12),
-    //ENUM_STRING(STM32_TIM13),
-    //ENUM_STRING(STM32_TIM14),
+    ENUM_STRING(STM32_TIM13),
+    ENUM_STRING(STM32_TIM14),
 
     ENUM_STRING(STM32_GPIOA),
     ENUM_STRING(STM32_GPIOB),
@@ -194,7 +194,7 @@ void stm32l1xx_init(
     sysbus_connect_irq(exti_busdev, 12, qdev_get_gpio_in(nvic, STM32_TAMP_STAMP_IRQ));
     sysbus_connect_irq(exti_busdev, 13, qdev_get_gpio_in(nvic, STM32_RTC_WKUP_IRQ));
 
-    DeviceState *syscfg_dev = qdev_create(NULL, "stm32f2xx_syscfg");
+    DeviceState *syscfg_dev = qdev_create(NULL, "stm32l1xx_syscfg");
     qdev_prop_set_ptr(syscfg_dev, "stm32_rcc", rcc_dev);
     qdev_prop_set_ptr(syscfg_dev, "stm32_exti", exti_dev);
     qdev_prop_set_bit(syscfg_dev, "boot0", 0);
