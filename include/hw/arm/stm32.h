@@ -557,4 +557,17 @@ void stm32f7xx_init(
                     struct stm32f7xx *stm,
                     ARMCPU **cpu);
 
+struct stm32l1xx_t;
+        void stm32l1xx_init(
+                ram_addr_t flash_size,
+                ram_addr_t ram_size,
+                const char *kernel_filename,
+                Stm32Gpio **stm32_gpio,
+                Stm32Uart **stm32_uart,
+                Stm32Timer **stm32_timer,
+                DeviceState **stm32_rtc,
+                uint32_t osc_freq,
+                uint32_t osc32_freq,
+                struct stm32l1xx_t *stm,
+                ARMCPU **cpu);
 #endif /* STM32_H */

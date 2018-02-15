@@ -194,7 +194,7 @@ void stm32l1xx_init(
     sysbus_connect_irq(exti_busdev, 12, qdev_get_gpio_in(nvic, STM32_TAMP_STAMP_IRQ));
     sysbus_connect_irq(exti_busdev, 13, qdev_get_gpio_in(nvic, STM32_RTC_WKUP_IRQ));
 
-    DeviceState *syscfg_dev = qdev_create(NULL, "stm32l1xx_syscfg");
+    DeviceState *syscfg_dev = qdev_create(NULL, "stm32f2xx_syscfg");
     qdev_prop_set_ptr(syscfg_dev, "stm32_rcc", rcc_dev);
     qdev_prop_set_ptr(syscfg_dev, "stm32_exti", exti_dev);
     qdev_prop_set_bit(syscfg_dev, "boot0", 0);

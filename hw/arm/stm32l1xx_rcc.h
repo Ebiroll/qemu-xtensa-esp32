@@ -3,7 +3,7 @@
 #include "stm32l1xx.h"
 #include "stm32_rcc.h"
 
-typedef struct Stm32f2xxRcc {
+typedef struct Stm32lixxRcc {
     /* Inherited */
     union {
         Stm32Rcc inherited;
@@ -23,13 +23,14 @@ typedef struct Stm32f2xxRcc {
     
     /* Peripheral clocks */
     Clk PERIPHCLK[STM32_PERIPH_COUNT], // MUST be first field after `inherited`, because Stm32Rcc's last field aliases this array
-    HSICLK,
+    HSICLK, 
     HSECLK,
-    LSECLK,
-    LSICLK,
+    MSICLK,
     SYSCLK,
     IWDGCLK,
     RTCCLK,
+    LSECLK,
+    LSICLK,
 
     PLLM, /* Applies "M" division and "N" multiplication factors for PLL */
     PLLCLK,
@@ -45,20 +46,21 @@ typedef struct Stm32f2xxRcc {
     /* Register Values */
     uint32_t
     RCC_CIR,
+    RCC_ICSCR,
     RCC_APB1ENR,
-    RCC_APB2ENR;
+    RCC_APB2ENR,
+    RCC_APB1LPENR,
+    RCC_APB2LPENR;
 
     /* Register Field Values */
     uint32_t
     RCC_CFGR_PPRE1,
     RCC_CFGR_PPRE2,
     RCC_CFGR_HPRE,
-    RCC_AHB1ENR,
+    RCC_AHBLPENR,
     RCC_AHB2ENR,
     RCC_AHB3ENR,
-    RCC_CFGR_SW,
-    RCC_PLLCFGR,
-    RCC_PLLI2SCFGR;
+    RCC_CFGR_SW;
 
     uint8_t
     RCC_PLLCFGR_PLLM,
@@ -75,4 +77,4 @@ typedef struct Stm32f2xxRcc {
     uint16_t
     RCC_PLLI2SCFGR_PLLN;
 
-} Stm32f2xxRcc;
+} Stm32lixxRcc;
