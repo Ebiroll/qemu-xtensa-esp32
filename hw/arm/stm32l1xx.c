@@ -225,7 +225,18 @@ void stm32l1xx_init(
         stm32_init_periph(uart_dev, periph, uart_desc[i].addr,
           qdev_get_gpio_in(nvic, uart_desc[i].irq_idx));
         stm32_uart[i] = (Stm32Uart *)uart_dev;
+
+
+        /* Connect RS232 to UART */
+        stm32_uart_connect(
+               // s->stm32_uart[STM32_UART2_INDEX],
+                stm32_uart[i],
+                serial_hds[0],
+                STM32_USART2_NO_REMAP);
     }
+
+
+
 
 
     /* SPI */

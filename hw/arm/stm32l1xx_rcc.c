@@ -646,6 +646,15 @@ static void stm32_rcc_RCC_APB1ENR_write(Stm32lixxRcc *s, uint32_t new_value,
     stm32_rcc_periph_enable(s, new_value, init, STM32_UART2,
                             RCC_APB1ENR_USART2EN_BIT);
 */
+
+    // TODO! Look at individual bits to enable 
+    stm32_rcc_periph_enable(s, new_value, init, STM32_UART3,
+                            RCC_APB1ENR_USART3EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_UART2,
+                            RCC_APB1ENR_USART2EN_BIT);
+    stm32_rcc_periph_enable(s, new_value, init, STM32_UART1,
+                            RCC_APB1ENR_USART2EN_BIT);
+
     /* 0b00110110111111101100100111111111 */
     s->RCC_APB1ENR = new_value & 0x36fec9ff;
 }
