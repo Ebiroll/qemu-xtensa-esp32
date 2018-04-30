@@ -394,6 +394,7 @@ static uint32_t stm32_rcc_RCC_CR_read(Stm32lixxRcc *s)
      * then its ready bit is always set.
      */
     return (
+        (21 << 1) | 
         GET_BIT_MASK(RCC_CR_PLLRDY_BIT, PLLON) |
         GET_BIT_MASK(RCC_CR_PLLON_BIT, PLLON) |
 
@@ -692,9 +693,10 @@ static uint32_t stm32_rcc_RCC_CSR_read(Stm32lixxRcc *s)
 
     //return GET_BIT_MASK(RCC_CR_HSERDY_BIT, hseon) |
     //GET_BIT_MASK(RCC_CR_HSEON_BIT, hseon);
+    // #define 	RCC_FLAG_HSIRDY   ((uint8_t)0x21)
     // Fake ready and on internal external low speed
     bool hseon=true;
-    return GET_BIT_MASK(RCC_CSR_LSIRDY_BIT, hseon) |
+    return      GET_BIT_MASK(RCC_CSR_LSIRDY_BIT, hseon) |
       GET_BIT_MASK(RCC_CSR_LSION_BIT, hseon) |
       GET_BIT_MASK(RCC_CSR_LSERDY_BIT, hseon) |
       GET_BIT_MASK(RCC_CSR_LSEON_BIT, hseon);
