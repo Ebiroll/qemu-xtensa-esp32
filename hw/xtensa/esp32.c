@@ -1799,9 +1799,16 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            break;
 
        case 0x5f06c:
-           printf("TIMG_RTCCALICFG1_REG 3ff5f06c=25\n");
-           return 0x25;
+           printf("TIMG_RTCCALICFG1_REG 3ff5f06c=0x25\n");
+           return 0x125;
            break;
+        case 0x48070:
+            // slow_freq = REG_GET_FIELD(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_ANA_CLK_RTC_SEL)
+            printf(" 48070 \n");
+            return 0x01 << 30;
+            break;
+
+
         case 0x48088:
             printf("RTC_CNTL_DIG_ISO_REG 3ff48088=%08X\n",sim_RTC_CNTL_DIG_ISO_REG);
             return sim_RTC_CNTL_DIG_ISO_REG;
