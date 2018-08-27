@@ -63,7 +63,11 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include "inttypes.h"
 #include "hw/isa/isa.h"
 #include "hw/i2c/i2c_esp32.h"
+#ifndef _WIN32
 #include <poll.h>
+#else
+#include <pthread.h>
+#endif
 #include <error.h>
 #include "hw/i2c/i2c.h"
 #include "esp32_sha.h"
@@ -1163,9 +1167,10 @@ void *connection_handler(void *connect)
     bool socket_ok=true;
     do 
     {
-        struct pollfd fd;
         int ret;
         read_size=0;
+#ifndef _WIN32
+        struct pollfd fd;
 
         fd.fd = sock; // your socket handler 
         fd.events = POLLIN;
@@ -1181,6 +1186,18 @@ void *connection_handler(void *connect)
                 read_size = recv(sock , client_message , 512 , 0);
                 break;
         }
+#else
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(sock, &readfds);
+        int rc = select(sock+1, &readfds, NULL, NULL, NULL);
+        if(rc == -1)
+            break;
+        if(!FD_ISSET(sock, &readfds)){
+            socket_ok=false;
+        }
+
+#endif
 
         if (gdb_serial[uart_num]) {
             if (read_size>0)  {
@@ -1548,9 +1565,10 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
         {
             unsigned int *rom_data = (unsigned int *)malloc(len);
             fseek(f_flash,flash_start,SEEK_SET);
-            if (fread(rom_data, len, 1, f_flash) < 1)
+            int len_read=0;
+            if ((len_read=fread(rom_data, len, 1, f_flash)) < 0)
             {
-                fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt. %d,%d\n",flash_start,len);
+                fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt. %d,%d--%d\n",flash_start,len,len_read);
             }
             else {
                 //fprintf(stderr,"-%8X\n",mem_addr);
