@@ -83,6 +83,14 @@ typedef struct Esp32 {
     qemu_irq app_to_pro_yield_irq;
 } Esp32;
 
+
+
+
+XtensaCPU *APPcpu = NULL;
+
+XtensaCPU *PROcpu = NULL;
+
+
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
@@ -1415,6 +1423,94 @@ static const MemoryRegionOps ulp_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+///////////////////////////
+
+typedef struct ROM1_State {
+    MemoryRegion iomem;
+} ROM1_State;
+
+void stop() {
+    int nisse=7;
+}
+
+unsigned int *rom1_data=NULL;
+
+unsigned int rom1_data_cpu0[0x10000];
+
+
+//(unsigned int *)malloc(0x10000*sizeof(unsigned int));
+
+
+void init_rom1() {
+
+    FILE *f_rom1=fopen("cpu1_rom1.bin", "r");
+    
+    if (f_rom1 == NULL) {
+        printf("   Can't open 'rom1.bin' for reading.\n");
+    } else {
+        unsigned int *rom1_data=(unsigned int *)malloc(0x10000*sizeof(unsigned int));
+        if (fread(rom1_data,0x10000*sizeof(unsigned char),1,f_rom1)<1) {
+            printf(" File 'rom1.bin' is truncated or corrupt.\n");                
+        }
+        cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
+        fclose(f_rom1);
+    }
+
+
+
+}
+
+static uint64_t rom1_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+
+    if (opaque==APPcpu) {
+        printf("rom1 appcpu-read %" PRIx64 " \n",addr);
+    }
+
+    if (opaque==PROcpu) {
+        printf("rom1 procpu-read %" PRIx64 " \n",addr);
+    }
+
+    stop();
+
+    if (rom1_data!=NULL) {
+
+    }
+
+    //ULP_State *s = opaque;
+    switch (addr) {
+    case 0x0: /*boot start time*/
+        return 0x0;
+    }
+    return (rom1_data_cpu0[addr]);
+}
+
+static void rom1_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+    //ULP_State *s = opaque;
+    //printf("rom1 write %" PRIx64 " \n",addr);
+
+    stop();
+
+    rom1_data_cpu0[addr]=val;
+
+    switch (addr) {
+    case 0x0: 
+        //s->leds = val;
+        break;
+    }
+}
+
+static const MemoryRegionOps rom1_ops = {
+    .read = rom1_read,
+    .write = rom1_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+///////////////////////////////////
+
+
 static ULP_State *esp32_fpga_init(MemoryRegion *address_space,
         hwaddr base)
 {
@@ -1563,10 +1659,10 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
         }
         else
         {
-            unsigned int *rom_data = (unsigned int *)malloc(len);
+            unsigned int *flash_data = (unsigned int *)malloc(len);
             fseek(f_flash,flash_start,SEEK_SET);
             int len_read=0;
-            if ((len_read=fread(rom_data, len, 1, f_flash)) < 0)
+            if ((len_read=fread(flash_data, len, 1, f_flash)) < 0)
             {
                 fprintf(stderr, " File 'esp32flash.bin' is truncated or corrupt. %d,%d--%d\n",flash_start,len,len_read);
             }
@@ -1575,11 +1671,11 @@ void mapFlashToMem(uint32_t flash_start,uint32_t mem_addr,uint32_t len)
                 //fprintf(stderr,"->%8X\n",mem_addr+0x10000);
 
                 //memdump(mem_addr,0x4000);
-                cpu_physical_memory_write(mem_addr, rom_data, len );
+                cpu_physical_memory_write(mem_addr, flash_data, len );
 
                 //fprintf(stderr, "(qemu) Flash partition data is loaded.\n");
             }
-            free(rom_data);
+            free(flash_data);
 
         }        
 }
@@ -1749,8 +1845,9 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            break;
             // rtc_clk_xtal_freq_get TODO investigate further
        case 0x480b0:
-           printf("RTC_XTAL_FREQ_REG 3ff480b0=%" PRIx64 "\n",0xf04ff04ff);
-           return 0x04ff04ff;
+           printf("RTC_XTAL_FREQ_REG 3ff480b0=%" PRIx64 "\n",0x00280028);
+           //return 0x04ff04ff;
+           return 0x00280028;
            break;
 
        case 0x480b4:
@@ -1873,10 +1970,6 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 }
 
 
-
-XtensaCPU *APPcpu = NULL;
-
-XtensaCPU *PROcpu = NULL;
 
 
 
@@ -2656,6 +2749,62 @@ static const MemoryRegionOps esp_iomux_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+//////////////// Separate rom for cpu0 and cpu1
+unsigned char *rom_data;
+
+
+static uint64_t esp_rom_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+        //printf("rom read %" PRIx64 " %d\n",addr,size);
+        //printf("rom 0 %08X\n",  rom_data[addr]   );
+        //printf("rom 1 %08X\n",  rom_data[addr+1] );
+        //printf("rom 2 %08X\n",  rom_data[addr+2] );
+        //printf("rom 3 %08X\n",  rom_data[addr+3] );
+
+       uint32_t val;
+       Esp32 *esp32=(Esp32 *) opaque;
+       switch (size) {
+           case 1:
+              return(rom_data[addr]);
+              break;
+           case 2:
+               val=(rom_data[addr+1] << 8) | (rom_data[addr]);
+                //printf("rom val %08X\n",  rom_data[addr] | (16 << rom_data[addr+1]),size);
+                return(val);
+                break;
+           case 3:
+                val=(rom_data[addr+2] << 16) | (rom_data[addr+1] << 8) | (rom_data[addr]) ;
+                //printf("rom val %08X \n",val);
+                return(val);
+                break;
+           case 4:
+                val=( rom_data[addr+3] << 32) | ( rom_data[addr+2] << 16) | (rom_data[addr+1] << 8) | (rom_data[addr+0]);
+                printf("rom val %08X\n", val);
+                return(val);
+                break;
+       }
+
+
+}
+
+
+static void esp_rom_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+       printf("rom write %" PRIx64 " \n",addr);
+
+
+} 
+
+static const MemoryRegionOps esp_rom_ops = {
+    .read = esp_rom_read,
+    .write = esp_rom_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+ ///////////////////////////
+
+
 
 
 // MMU not setup? Or maybe cpu_get_phys_page_debug returns wrong adress.
@@ -2695,7 +2844,10 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     //I2CBus *i2c_fixed;
     //
 
-    MemoryRegion *iomux;
+    MemoryRegion *iomux,*rom_test;
+
+    MemoryRegion *rom1_cpu0,*rom1_cpu1;
+
 
     MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem; // *gpio,
     static MemoryRegion *wifi_io;
@@ -2735,6 +2887,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     }
 
 
+
     for (i = 0; i < 2; ++i) {
         static const uint32_t prid[] = {
             0xcdcd,
@@ -2759,6 +2912,11 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
         esp32->cpu[i] = cpu;
         cpu->env.sregs[PRID] = prid[i];
     }
+
+
+
+
+
 
     qemu_register_reset(esp32_reset, esp32);
 
@@ -2812,7 +2970,25 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     vmstate_register_ram_global(ram1);
     memory_region_add_subregion(system_memory,0x40000000, ram1);
+//////////
 
+/* Test of sprite_tm suggestion for 
+
+    rom1_cpu1 = g_malloc(sizeof(*rom1_cpu1));
+    memory_region_init_io(rom1_cpu1, PROcpu, &rom1_ops, PROcpu, "esp32.cpu1rom1",
+                          0x10000); // FFFF
+
+    memory_region_add_subregion(system_memory, 0x3FF90000, rom1_cpu1);
+
+
+
+    rom1_cpu0 = g_malloc(sizeof(*rom1_cpu0));
+    memory_region_init_io(rom1_cpu0, APPcpu, &rom1_ops, APPcpu, "esp32.cpu0rom1",
+                          0x10000); // FFFF
+
+    memory_region_add_subregion(system_memory, 0x3FF90000, rom1_cpu0);
+
+*/
 
 // ULP
 
@@ -2846,6 +3022,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     // dram0 3ffc0000 
 
 //0x3ff49000
+
+
 
 
 
@@ -3217,11 +3395,11 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
             if (f_rom == NULL) {
                printf("   Can't open 'rom.bin' for reading.\n");
 	        } else {
-                unsigned int *rom_data=(unsigned int *)malloc(0xC2000*sizeof(unsigned int));
-                if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
+                rom_data=(unsigned char *)malloc(0xC2000*sizeof(unsigned int));
+                if (fread(rom_data,0x60000*sizeof(unsigned char),1,f_rom)<1) {
                    printf(" File 'rom.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned char));
+                cpu_physical_memory_write(0x40000000, rom_data, 0x60000*sizeof(unsigned char));
                 fclose(f_rom);
             }
 
@@ -3238,6 +3416,8 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                 fclose(f_rom1);
             }
 
+
+///// ROM test
 
 
 
@@ -3334,11 +3514,11 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
             if (f_rom == NULL) {
                printf("   Can't open 'rom.bin' for reading.\n");
 	        } else {
-                unsigned int *rom_data=(unsigned int *)malloc(0xC2000*sizeof(unsigned int));
+                rom_data=(unsigned char *)malloc(0xC2000*sizeof(unsigned int));
                 if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
                    printf(" File 'rom.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x40000000, rom_data, 0xC1FFF*sizeof(unsigned char));
+                cpu_physical_memory_write(0x40000000, rom_data, 4*0x60000*sizeof(unsigned char)); // 0xC1FFF*
                 fclose(f_rom);
             }
 
@@ -3357,7 +3537,18 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
 
 
 
+//esp_rom_ops
 
+#if 0
+    Error *error_ret;
+    printf("Setting rom options\n");
+    rom_test = g_malloc(sizeof(*rom_test));
+    memory_region_init_(rom_test, NULL, &esp_rom_ops, esp32, "esp32.romtest",
+                          4*0x60000,&error_ret);
+
+    memory_region_add_subregion(system_memory, 0x40000000, rom_test);
+
+#endif
 
 
 
