@@ -101,7 +101,7 @@ bool MemoryMapped::open(const std::string& filename, size_t mappedBytes, CacheHi
   }
 
   // open file
-  _file = ::CreateFileA(filename.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, winHint, NULL);
+  _file = ::CreateFileA(filename.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, winHint, NULL);
   if (!_file)
     return false;
 
@@ -112,7 +112,7 @@ bool MemoryMapped::open(const std::string& filename, size_t mappedBytes, CacheHi
   _filesize = static_cast<uint64_t>(result.QuadPart);
 
   // convert to mapped mode
-  _mappedFile = ::CreateFileMapping(_file, NULL, PAGE_READONLY, 0, 0, NULL);
+  _mappedFile = ::CreateFileMapping(_file, NULL, PAGE_READWRITE , 0, 0, NULL);
   if (!_mappedFile)
     return false;
 
@@ -266,7 +266,7 @@ bool MemoryMapped::remap(uint64_t offset, size_t mappedBytes)
   _mappedBytes = mappedBytes;
 
   // get memory address
-  _mappedView = ::MapViewOfFile(_mappedFile, FILE_MAP_READ, offsetHigh, offsetLow, mappedBytes);
+  _mappedView = ::MapViewOfFile(_mappedFile, (FILE_MAP_WRITE | FILE_MAP_READ) , offsetHigh, offsetLow, mappedBytes);
 
   if (_mappedView == NULL)
   {
@@ -363,6 +363,9 @@ extern "C" const unsigned char* get_flashMemory()
   if (memfile!=NULL) {
    //fprintf(stderr,"MAPPED esp32flash.bin");
    unsigned int *data=(unsigned int *)memfile->getData();
+   fprintf(stderr, "esp32flash.bin @ %08X\n", data);
+
+   /*
    for(int j=0;j<1024;j++) 
    {
       printf( "%08X", *data);
@@ -371,7 +374,7 @@ extern "C" const unsigned char* get_flashMemory()
         printf("\n");
       }
    }
-
+  */
    return (memfile->getData());
   }
 
