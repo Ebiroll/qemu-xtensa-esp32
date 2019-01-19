@@ -1875,12 +1875,14 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
     
       // Mac adress with crc, 24:0a:c4:00:c8:70,   crc ec
       case 0x5a004:
+          //  24:0a:c4:00:c8:70, found 30:ae:a4:49:ac:a8
            printf("EFUSE MAC\n"); 
-           return 0xc400c870;
+           // return 0xc400c870;
+           return 0xa449aca8;
            break;
       case 0x5a008:
            printf("EFUSE MAC\n"); 
-           return 0xffda240a;
+           return 0xffaa30ae;
            break;
 
 
@@ -2611,6 +2613,9 @@ rom_i2c_reg block 0x67 reg 0x6 57
     case 0x607c:
         return 0xffffffff;
         break;
+    case 0x11110:
+        printf("0x11110: current channel\n");
+        return 0x0000111;
     case 0x1c018:
         //return 0;
         return 0x11E15054;
@@ -2620,6 +2625,11 @@ rom_i2c_reg block 0x67 reg 0x6 57
               // 0x980020b0;
         //return   0x800000;
         break;
+
+    case 0x33d24:
+        printf("-\n");
+        return 0xffffffff;
+    
     case 0x33c00:
         return 0x0002BBED;
         break;
