@@ -121,7 +121,7 @@ bool MemoryMapped::open(const std::string& filename, size_t mappedBytes, CacheHi
   // Linux
 
   // open file , O_RDONLY
-  _file = ::open(filename.c_str(), O_RDWR | O_LARGEFILE);
+  _file = ::open(filename.c_str(), O_RDWR ); // | O_LARGEFILE		 
   if (_file == -1)
   {
     _file = 0;
@@ -281,7 +281,7 @@ bool MemoryMapped::remap(uint64_t offset, size_t mappedBytes)
 
   // Linux
   // new mapping
-  _mappedView = ::mmap64(NULL, mappedBytes, PROT_READ | PROT_WRITE, MAP_SHARED, _file, offset);
+  _mappedView = ::mmap(NULL, mappedBytes, PROT_READ | PROT_WRITE, MAP_SHARED, _file, offset);
   if (_mappedView == MAP_FAILED)
   {
     _mappedBytes = 0;

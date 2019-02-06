@@ -68,7 +68,7 @@ esp_err_t ulp_run(uint32_t entry_point)
 #else
 #include <pthread.h>
 #endif
-#include <error.h>
+//#include <error.h>
 #include "hw/i2c/i2c.h"
 #include "esp32_sha.h"
 

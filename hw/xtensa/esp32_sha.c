@@ -252,14 +252,14 @@ static void esp_sha_write(void *opaque, hwaddr addr,
     Esp32SHAState *s=opaque;
 
     if (s->initiated!=0x47) {
-        printf("sha init 0\n");
+        //printf("sha init 0\n");
         sha256_init(&s->ctx);
         s->initiated=0x47;
         s->max_buff_pos=0;
         s->total_buff_pos=0;
     }
 
-    printf("sha write 0x%" PRIx64 " \n",addr);
+    //printf("sha write 0x%" PRIx64 " \n",addr);
     if (addr<MAX_SHA_BUFF) {
         if (s->max_buff_pos<addr) {
             s->max_buff_pos=addr;
@@ -281,29 +281,29 @@ static void esp_sha_write(void *opaque, hwaddr addr,
         s->total_buffer[s->total_buff_pos+3]=s->buffer_data[b_pos+3];
         s->total_buff_pos+=4;
 
-        printf("sha val 0x%x\n",s->buffer_data[b_pos]);
-        printf("sha val 0x%x\n",s->buffer_data[b_pos+1]);
-        printf("sha val 0x%x\n",s->buffer_data[b_pos+2]);
-        printf("sha val 0x%x\n",s->buffer_data[b_pos+3]);
+        //printf("sha val 0x%x\n",s->buffer_data[b_pos]);
+        //printf("sha val 0x%x\n",s->buffer_data[b_pos+1]);
+        //printf("sha val 0x%x\n",s->buffer_data[b_pos+2]);
+        //printf("sha val 0x%x\n",s->buffer_data[b_pos+3]);
     }
 
     switch (addr)
     {
         case 0x90:  // Start
-            printf("sha start\n"); 
+            //printf("sha start\n"); 
             sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
             break;
 
         case 0x94:  // continue
-            printf("sha update 1 %2X\n",SHA_BUFF_LEN); 
+            //printf("sha update 1 %2X\n",SHA_BUFF_LEN); 
             sha256_update(&s->ctx,s->buffer_data,SHA_BUFF_LEN);
             //sha256_update(&s->ctx,s->total_buffer,s->num_bits/8);
             //sha256_init(&s->ctx);
             break;
 
         case 0x98:  // load
-            printf("sha final %d %d %d\n",s->ctx.datalen,s->num_bits/8, s->max_buff_pos);
-            print_dump(s->total_buffer);
+            //printf("sha final %d %d %d\n",s->ctx.datalen,s->num_bits/8, s->max_buff_pos);
+            //print_dump(s->total_buffer);
 
             // Saved buffer of all data 
             //sha256_init(&s->ctx);
@@ -321,19 +321,20 @@ static void esp_sha_write(void *opaque, hwaddr addr,
 
             sha256_init(&s->ctx);
             //memset(ctx->data,0,56); 
-            printf("sha init 1\n"); 
+            //printf("sha init 1\n"); 
  
 
             break;
 
 
         case 0x9c:  // 
-            return 0;
+            return ;
             break;
         default:
-         return 0;
+         return ;
             break;
     }
+    
 }
 
 static uint64_t esp_sha_read(void *opaque, hwaddr addr,
@@ -342,12 +343,12 @@ static uint64_t esp_sha_read(void *opaque, hwaddr addr,
 
     Esp32SHAState *s=opaque;
 
-    printf("sha read 0x%" PRIx64 " \n",addr);
+    //printf("sha read 0x%" PRIx64 " \n",addr);
 
     if (addr<=MAX_SHA_BUFF) {
         uint64_t b_pos=addr;
         uint64_t ret= (s->hash_result[b_pos+3]) + ((s->hash_result[b_pos+2]) << 8) + ((s->hash_result[b_pos+1]) << 16) + ((s->hash_result[b_pos+0]) << 24);
-        printf("sha val 0x%" PRIx64 " \n",ret);
+        //printf("sha val 0x%" PRIx64 " \n",ret);
 
         return ret;
     }
