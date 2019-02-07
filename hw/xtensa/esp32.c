@@ -2019,20 +2019,24 @@ if (addr>=0x10000 && addr<0x11ffc) {
     }
   }
 
-  // This probably continues
+  // This probably continues to 12000
   if (addr==0x10134 || addr==0x10138 || addr==0x1013c || addr==0x10140 || 
       addr==0x10144 || addr==0x10148 || addr==0x1014c || addr==0x10150 || 
       addr==0x10154 || addr==0x10158 || addr==0x1015c || addr==0x10160 ||  
       addr==0x10164 || addr==0x10168 || addr==0x1016c || addr==0x10170 ||
       addr==0x10174 || addr==0x10178 || addr==0x1017c || addr==0x10180 ||
       addr==0x10184 || addr==0x10188 || addr==0x1018c || addr==0x10190 ||
-      addr==0x10194 || addr==0x10198 || addr==0x1019c || addr==0x101a0 
-) {
+      addr==0x10194 || addr==0x10198 || addr==0x1019c || addr==0x101a0 ||
+      addr==0x101a4 || addr==0x101a8 || addr==0x101ac || addr==0x101b0 ||
+      addr==0x101b4 || addr==0x101b8 || addr==0x101bc || addr==0x101d0 ||
+      addr==0x101d4 || addr==0x101d8 || addr==0x101dc || addr==0x101e0 ||
+      addr==0x101e4 || addr==0x101e8 || addr==0x101ec || addr==0x101f0 ||
+      (addr>0x101f4 && addr<0x12000)) 
+{
 
     if (sim_DPORT_PRO_CACHE_CTRL1_REG==0x8ff) {
         int ix=(addr-0x10000)/4;
         unsigned int mem_loc=0x400d0000+(ix-77)*0x10000;
-        // TO TEST BOOTLOADER UNCOMMENT THIS ---->
         mapFlashToMem(val*0x10000, mem_loc,0x10000);
         //fprintf (stderr, "(qemu) IMMU2 %" PRIx64 "  %" PRIx64 "\n" ,mem_loc,val); 
     }
@@ -2114,6 +2118,46 @@ if (addr>=0x10000 && addr<0x11ffc) {
         if (addr==0x1003c) {
                 mapFlashToMem(val*0x10000, 0x3f4f0000,0x10000);
         }
+        if (addr==0x10040) {
+                mapFlashToMem(val*0x10000, 0x3f500000,0x10000);
+        }
+        if (addr==0x10044) {
+                mapFlashToMem(val*0x10000, 0x3f510000,0x10000);
+        }
+        if (addr==0x10048) {
+                mapFlashToMem(val*0x10000, 0x3f520000,0x10000);
+        }
+        if (addr==0x10050) {
+                mapFlashToMem(val*0x10000, 0x3f530000,0x10000);
+        }
+        if (addr==0x10054) {
+                mapFlashToMem(val*0x10000, 0x3f540000,0x10000);
+        }
+        if (addr==0x10058) {
+                mapFlashToMem(val*0x10000, 0x3f550000,0x10000);
+        }
+        if (addr==0x10060) {
+                mapFlashToMem(val*0x10000, 0x3f560000,0x10000);
+        }
+        if (addr==0x10064) {
+                mapFlashToMem(val*0x10000, 0x3f570000,0x10000);
+        }
+        if (addr==0x10068) {
+                mapFlashToMem(val*0x10000, 0x3f580000,0x10000);
+        }
+        if (addr==0x10070) {
+                mapFlashToMem(val*0x10000, 0x3f590000,0x10000);
+        }
+        if (addr==0x10074) {
+                mapFlashToMem(val*0x10000, 0x3f5A0000,0x10000);
+        }
+        if (addr==0x10078) {
+                mapFlashToMem(val*0x10000, 0x3f5B0000,0x10000);
+        }
+        if (addr==0x10080) {
+                mapFlashToMem(val*0x10000, 0x3f5C0000,0x10000);
+        }
+// Unt so weiter --<12000
 
    }
 
@@ -2160,7 +2204,12 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
         case 0x38:
             printf("DPORT_APPCPU_CTRL_D_REG 3ff00038\n");
+            //
+            printf("APP CPU ENTRY point %" PRIx64 ",%" PRIx64 " \n",addr,val);
             sim_DPORT_APPCPU_CTRL_D_REG=val;
+            CPUXtensaState *env = &APPcpu->env;
+            // Brute force program counter
+            //env->pc=val;
             break;
 
         case 0x48:
@@ -2281,9 +2330,9 @@ if (addr>=0x12000 && addr<0x13ffc) {
            case 0xE0:
               printf(" DPORT_CPU_INTR_FROM_CPU_1_REG  3ff000E0  %" PRIx64 "\n" ,val);
               if (val==0) {
-                   qemu_irq_lower(esp32->app_to_pro_yield_irq);
+                  qemu_irq_lower(esp32->app_to_pro_yield_irq);
               } else {
-                 qemu_irq_raise(esp32->app_to_pro_yield_irq);
+                  qemu_irq_raise(esp32->app_to_pro_yield_irq);
               }
               break;  
 
@@ -2292,7 +2341,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
               if (val==0) {
                    qemu_irq_lower(esp32->app_to_pro_yield_irq);
               } else {
-                 qemu_irq_raise(esp32->app_to_pro_yield_irq);
+                  qemu_irq_raise(esp32->app_to_pro_yield_irq);
               }
               break;
 
@@ -2324,7 +2373,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
       case  0x168:
           printf("DPORT_PRO_CPU_INTR_FROM_CPU_1_MAP_REG %" PRIx64 "\n" ,val);
-          // ?esp32->app_to_pro_yield_irq=APPcpu->env.irq_inputs[val];
+          esp32->app_to_pro_yield_irq=APPcpu->env.irq_inputs[val] ;
 
           break;
 
