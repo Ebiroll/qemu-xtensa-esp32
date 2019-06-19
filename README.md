@@ -1,8 +1,20 @@
+
+
+
 # ESP32 & Pebble Smartwatch QEMU Implementation
 
-To learn about ARM and STM32
+To learn about esp32, ARM and STM32
 
-./qemu-system-arm   -serial file:uart1.log -serial tcp::12344,server,nowait -serial tcp::12345,server,nowait -monitor stdio -machine pebble-bb2  -cpu cortex-m3 -S -s  -pflash .pioenvs/rak811/firmware.bin
+https://travis-ci.org/Ebiroll/qemu-xtensa-esp32.svg?branch=master
+
+
+# To run qemu arm arm
+
+    ./qemu-system-arm   -serial file:uart1.log -serial tcp::12344,server,nowait -serial tcp::12345,server,nowait -monitor stdio -machine pebble-bb2  -cpu cortex-m3 -S -s  -pflash .pioenvs/rak811/firmware.bin
+
+# For esp32 please read here
+
+https://github.com/Ebiroll/qemu_esp32
 
 
 ## Overview
