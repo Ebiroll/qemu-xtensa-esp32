@@ -5,7 +5,8 @@
 
 To learn about esp32, ARM and STM32
 
-https://travis-ci.org/Ebiroll/qemu-xtensa-esp32.svg?branch=master
+
+[![Build Status](https://travis-ci.org/Ebiroll/qemu-xtensa-esp32.svg?branch=master)](https://travis-ci.org/Ebiroll/qemu-xtensa-esp32)
 
 
 # To run qemu arm arm
