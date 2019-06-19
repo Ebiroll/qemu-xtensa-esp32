@@ -9,20 +9,28 @@ To learn about esp32, ARM and STM32
 [![Build Status](https://travis-ci.org/Ebiroll/qemu-xtensa-esp32.svg?branch=master)](https://travis-ci.org/Ebiroll/qemu-xtensa-esp32)
 
 
-# To run qemu arm arm
+
+## Overview
+This is originaly the ESP32 qenu with added arm emulation
+STM32F2xx microcontroller.
+This is based off of a QEMU fork that is targeting the STM32F103: https://github.com/beckus/qemu_stm32.
+This repo contains both beckus' STM32F1xx implementation and Pebble's STM32F2xx additions. I have also added simple STM32L1 emulation
+
+   -machine rak811
+
+
+# To run qemu arm
 
     ./qemu-system-arm   -serial file:uart1.log -serial tcp::12344,server,nowait -serial tcp::12345,server,nowait -monitor stdio -machine pebble-bb2  -cpu cortex-m3 -S -s  -pflash .pioenvs/rak811/firmware.bin
+
+
+    ./qemu-system-arm   -serial file:uart1.log  -d unimp  -serial tcp::12345,server,nowait -monitor stdio -machine rak811  -cpu cortex-m3 -S -s -pflash .pioenvs/rak811/firmware.bin
 
 # For esp32 please read here
 
 https://github.com/Ebiroll/qemu_esp32
 
 
-## Overview
-This is originaly the ESP32 qenu with added arm emulation
-STM32F2xx microcontroller.
-This is based off of a QEMU fork that is targeting the STM32F103: https://github.com/beckus/qemu_stm32.
-This repo contains both beckus' STM32F1xx implementation and Pebble's STM32F2xx additions.
 
 # Configure for  ESP32
 Dont do in source builds, try mkdir qemu_esp32
