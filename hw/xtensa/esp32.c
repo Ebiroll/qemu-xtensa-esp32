@@ -16,8 +16,7 @@
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -212,7 +211,7 @@ static void esp32_serial_irq_update(Esp32SerialState *s)
         //fprintf(stderr,"RAISING IRQ\n");
         if (s->uart_num==0) {
             //fprintf(stderr,"RAISING IRQ\n");
-           qemu_irq_raise(uart0_irq);
+            qemu_irq_raise(uart0_irq);
         }
         else if (s->uart_num==1) {
            qemu_irq_raise(uart1_irq);
@@ -777,6 +776,14 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
        if (command==0x35) {
            DEBUG_LOG("CMD 0x35 (RDSR2) read status register\n");
        }
+       if (command==0x1f) { // RDID
+          s->reg[data_w0]=0x409D;  
+          // Size ??
+          s->reg[data_w1]=0x3E80;
+          s->reg[data_w2]=0x00;
+          s->reg[data_w3]=0x00;
+
+       }
        if (command==0x05) {
            DEBUG_LOG("CMD 0x05 (RDSR) Read status register.\n");
            if (s->wren==1) {
@@ -1213,7 +1220,7 @@ void *connection_handler(void *connect)
                 gdb_serial[uart_num]->reg[ESP32_UART_INT_RAW] |= BIT(8);
 
                 esp32_serial_receive(gdb_serial[uart_num],(unsigned char *)client_message,read_size);
-                printf("%s",client_message);
+                printf("-%s-",client_message);
             }
         }
 
@@ -2442,8 +2449,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
             printf("EMAC_EX_CLK_CTRL_REG %" PRIx64 "\n" ,val);
             break;
 
-            // desc2 = 0x3ffb214c, desc3 = 0x3ffb9e6c
-            // desc2 = 0x3ffb408c, desc3 = 0x3ffb9f0c
+            // desc2 = 0x3ffb214c, desc3 = 0x3ffb9e6c            // desc2 = 0x3ffb408c, desc3 = 0x3ffb9f0c
             // desc2 = 0x3ffb598c, desc3 = 0x3ffb9e4c
 
        case  0x6980c:
