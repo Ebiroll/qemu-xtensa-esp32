@@ -777,11 +777,11 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
            DEBUG_LOG("CMD 0x35 (RDSR2) read status register\n");
        }
        if (command==0x1f) { // RDID
-          s->reg[data_w0]=0x409D;  
+          s->reg[data_w0]=0x16409D; // 16=4MB Flash 
           // Size ??
           s->reg[data_w1]=0x3E80;
-          s->reg[data_w2]=0x00;
-          s->reg[data_w3]=0x00;
+          s->reg[data_w2]=0x3E80;
+          s->reg[data_w3]=0x3E80;
 
        }
        if (command==0x05) {
