@@ -11,7 +11,7 @@ To learn about esp32, ARM and STM32
 
 
 ## Overview
-This is originaly the ESP32 qenu with added arm emulation
+This is originaly the ESP32 qemu with added arm emulation
 STM32F2xx microcontroller.
 This is based off of a QEMU fork that is targeting the STM32F103: https://github.com/beckus/qemu_stm32.
 This repo contains both beckus' STM32F1xx implementation and Pebble's STM32F2xx additions. I have also added simple STM32L1 emulation
