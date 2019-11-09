@@ -12,6 +12,7 @@
 #include "qemu/log.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
+#include "qemu-common.h"
 #include "hw/hw.h"
 #include "hw/boards.h"
 #include "hw/loader.h"
@@ -474,6 +475,16 @@ static void esp32_soc_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(s), esp32_cpu_reset, ESP32_RTC_CPU_RESET_GPIO, ESP32_CPU_COUNT);
     qdev_init_gpio_in_named(DEVICE(s), esp32_cpu_stall, ESP32_RTC_CPU_STALL_GPIO, ESP32_CPU_COUNT);
     qdev_init_gpio_in_named(DEVICE(s), esp32_clk_update, ESP32_RTC_CLK_UPDATE_GPIO, 1);
+
+    const char *rom_filename = "rom.bin";
+
+    rom_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, rom_filename);
+    if (!rom_filename ||
+        load_image_targphys(rom_filename, 0x40000000, 794624/*412384*/) < 0) {
+        error_report("unable to load ROM image '%s'\n", rom_filename);
+        exit(EXIT_FAILURE);
+    }
+
 }
 
 static Property esp32_soc_properties[] = {
