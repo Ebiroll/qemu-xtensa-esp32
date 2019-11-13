@@ -13,7 +13,7 @@ jobs:
       run:  sudo apt-get install build-essential libpixman-1-0 libpixman-1-dev libglib2.0-dev zlib1g-dev
     - name: Compile qemu
       run: |
-        cd /home/runner/work/
+        pwd
         mkdir qemu_esp32
         cd qemu_esp32
         ../qemu-xtensa-esp32/configure --disable-capstone --disable-werror --prefix=`pwd`/root --target-list=xtensa-softmmu
