@@ -21,4 +21,4 @@ jobs:
     - uses: actions/upload-artifact@master
       with:
         name: qemu-system-xtensa
-        path: xtensa-softmmu/qemu-system-xtensa
+        path: ../qemu_esp32/xtensa-softmmu/qemu-system-xtensa
