@@ -16,7 +16,7 @@ jobs:
         cd ..
         mkdir qemu_esp32
         cd qemu_esp32
-        ../qemu-xtensa-esp32/configure --disable-capstone --disable-werror --prefix=`pwd`/root --target-list=xtensa-softmmu
+        ../qemu-xtensa-esp32/configure --disable-capstone --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
         make -j 2
     - uses: actions/upload-artifact@master
       with:
