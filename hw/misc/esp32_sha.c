@@ -28,10 +28,10 @@
  * we call "qcrypto_hash_bytes" to get the digest.
  */
 
-static void esp32_sha_text_reg_byteswap(Esp32ShaState* s)
+static void esp32_sha_text_reg_byteswap_to(Esp32ShaState* s, uint32_t* dst, size_t len_words)
 {
-    for (int i = 0; i < sizeof(s->text) / sizeof(uint32_t); ++i) {
-        s->text[i] = __builtin_bswap32(s->text[i]);
+    for (int i = 0; i < len_words; ++i) {
+        dst[i] = __builtin_bswap32(s->text[i]);
     }
 }
 
@@ -57,15 +57,14 @@ static uint32_t hash_block_bytes[] = {
 
 static void esp32_sha_update_text(Esp32ShaState* s, QCryptoHashAlgorithm hash_alg)
 {
-    esp32_sha_text_reg_byteswap(s);
     uint32_t block_len_bytes = hash_block_bytes[hash_alg];
     if (s->full_text_len + block_len_bytes > s->full_text_reserved) {
-        uint32_t full_text_reserved = MAX(s->full_text_reserved * 2, block_len_bytes * 4);
+        uint32_t full_text_reserved = MAX(s->full_text_reserved * 2, s->full_text_reserved + block_len_bytes);
         uint8_t *new_full_text = g_realloc(s->full_text, full_text_reserved);
         s->full_text_reserved = full_text_reserved;
         s->full_text = new_full_text;
     }
-    memcpy(s->full_text + s->full_text_len, s->text, block_len_bytes);
+    esp32_sha_text_reg_byteswap_to(s, (uint32_t*) (s->full_text + s->full_text_len), block_len_bytes/4);
     s->full_text_len += block_len_bytes;
 }
 
@@ -89,7 +88,7 @@ static void esp32_sha_finish(Esp32ShaState *s, QCryptoHashAlgorithm hash_alg)
             error_report("esp32_sha_finish: invalid byte count %" PRIx32 "\n", byte_count);
         } else {
             qcrypto_hash_bytes(hash_alg, (const char*) s->full_text, byte_count, &result, &result_len, &error_abort);
-            esp32_sha_text_reg_byteswap(s);
+            esp32_sha_text_reg_byteswap_to(s, (uint32_t*) s->text, result_len/4);
         }
     }
     g_free(s->full_text);
