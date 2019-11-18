@@ -42,12 +42,15 @@ static void esp32_cache_data_sync(Esp32CacheRegionState* crs);
 
 static inline uint32_t get_mmu_entry(Esp32CacheRegionState* crs, hwaddr base, hwaddr addr)
 {
-    return crs->mmu_table[(addr - base)/sizeof(uint32_t)];
+    return crs->mmu_table[(addr - base)/sizeof(uint32_t)] & MMU_ENTRY_MASK;
 }
 
 static inline void set_mmu_entry(Esp32CacheRegionState* crs, hwaddr base, hwaddr addr, uint64_t val)
 {
-    crs->mmu_table[(addr - base)/sizeof(uint32_t)] = val & MMU_ENTRY_MASK;
+    uint32_t old_val = crs->mmu_table[(addr - base)/sizeof(uint32_t)];
+    if (val != old_val) {
+        crs->mmu_table[(addr - base)/sizeof(uint32_t)] = (val & MMU_ENTRY_MASK) | ESP32_CACHE_MMU_ENTRY_CHANGED;
+    }
 }
 
 static uint64_t esp32_dport_read(void *opaque, hwaddr addr, unsigned int size)
@@ -197,9 +200,14 @@ static const MemoryRegionOps esp32_dport_ops = {
 static void esp32_cache_data_sync(Esp32CacheRegionState* crs)
 {
     uint8_t* cache_data = (uint8_t*) memory_region_get_ram_ptr(&crs->mem);
+    int n = 0;
     for (int i = 0; i < ESP32_CACHE_PAGES_PER_REGION; ++i) {
         uint32_t* cache_page = (uint32_t*) (cache_data + i * ESP32_CACHE_PAGE_SIZE);
         uint32_t mmu_entry = crs->mmu_table[i];
+        if (!(mmu_entry & ESP32_CACHE_MMU_ENTRY_CHANGED)) {
+            continue;
+        }
+        mmu_entry &= MMU_ENTRY_MASK;
         if (mmu_entry & ESP32_CACHE_MMU_INVALID_VAL) {
             uint32_t fill_val = crs->type == ESP32_DCACHE ? 0xbaadbaad : 0x00000000;
             for (int word = 0; word < ESP32_CACHE_PAGE_SIZE / sizeof(uint32_t); ++word) {
@@ -209,7 +217,8 @@ static void esp32_cache_data_sync(Esp32CacheRegionState* crs)
             uint32_t phys_addr = mmu_entry * ESP32_CACHE_PAGE_SIZE;
             blk_pread(crs->cache->dport->flash_blk, phys_addr, cache_page, ESP32_CACHE_PAGE_SIZE);
         }
-
+        crs->mmu_table[i] &= ~ESP32_CACHE_MMU_ENTRY_CHANGED;
+        n++;
     }
     memory_region_flush_rom_device(&crs->mem, 0, ESP32_CACHE_REGION_SIZE);
 }
@@ -233,6 +242,19 @@ static void esp32_cache_state_update(Esp32CacheState* cs)
     memory_region_set_enabled(&cs->iram0.mem, iram0_enabled);
 }
 
+static void esp32_cache_region_reset(Esp32CacheRegionState *crs)
+{
+    for (int i = 0; i < ESP32_CACHE_PAGES_PER_REGION; ++i) {
+        crs->mmu_table[i] = ESP32_CACHE_MMU_ENTRY_CHANGED;
+    }
+}
+
+static void esp32_cache_reset(Esp32CacheState *cs)
+{
+    esp32_cache_region_reset(&cs->drom0);
+    esp32_cache_region_reset(&cs->iram0);
+}
+
 static const MemoryRegionOps esp32_cache_ops = {
     .write = NULL,
     .endianness = DEVICE_LITTLE_ENDIAN,
@@ -247,6 +269,8 @@ static void esp32_dport_reset(DeviceState *dev)
     s->appcpu_clkgate_state = false;
     s->appcpu_reset_state = true;
     s->appcpu_stall_state = false;
+    esp32_cache_reset(&s->cache_state[0]);
+    esp32_cache_reset(&s->cache_state[1]);
 }
 
 static void esp32_dport_realize(DeviceState *dev, Error **errp)

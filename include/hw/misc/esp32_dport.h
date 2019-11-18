@@ -43,6 +43,7 @@ typedef struct Esp32CrosscoreInt {
 #define ESP32_CACHE_PAGES_PER_REGION    64
 #define ESP32_CACHE_REGION_SIZE         (ESP32_CACHE_PAGE_SIZE * ESP32_CACHE_PAGES_PER_REGION)
 #define ESP32_CACHE_MMU_INVALID_VAL     0x100
+#define ESP32_CACHE_MMU_ENTRY_CHANGED   0x200     /* not a hardware flag; used here to check if the page data needs to be updated */
 #define ESP32_CACHE_MAX_PHYS_PAGES      0x100
 
 typedef enum Esp32CacheRegionType {
