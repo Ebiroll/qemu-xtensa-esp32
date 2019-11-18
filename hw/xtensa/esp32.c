@@ -593,16 +593,38 @@ static void esp32_machine_inst_init(MachineState *machine)
      */
     cpu_reset(CPU(&s->cpu[0]));
 
+    const char *load_elf_filename = NULL;
+    if (machine->firmware) {
+        load_elf_filename = machine->firmware;
+    }
     if (machine->kernel_filename) {
+        qemu_log("Warning: both -bios and -kernel arguments specified. Only loading the the -kernel file.\n");
+        load_elf_filename = machine->kernel_filename;
+    }
+
+    if (load_elf_filename) {
         uint64_t elf_entry;
         uint64_t elf_lowaddr;
-        int success = load_elf(machine->kernel_filename, NULL,
+        int success = load_elf(load_elf_filename, NULL,
                                translate_phys_addr, &s->cpu[0],
                                &elf_entry, &elf_lowaddr,
                                NULL, 0, EM_XTENSA, 0, 0);
         if (success > 0) {
             s->cpu[0].env.pc = elf_entry;
         }
+    } else {
+        char *rom_binary = qemu_find_file(QEMU_FILE_TYPE_BIOS, "esp32-r0-rom.bin");
+        if (rom_binary == NULL) {
+            error_report("Error: -bios argument not set, and ROM code binary not found");
+            exit(1);
+        }
+
+        int size = load_image_targphys(rom_binary, esp32_memmap[ESP32_MEMREGION_IROM].base, esp32_memmap[ESP32_MEMREGION_IROM].size);
+        if (size < 0) {
+            error_report("Error: could not load ROM binary '%s'", rom_binary);
+            exit(1);
+        }
+        g_free(rom_binary);
     }
 }
 
