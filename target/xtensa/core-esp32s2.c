@@ -19,7 +19,7 @@
 #include "core-esp32s2/xtensa-modules.inc.c"
 
 static XtensaConfig xtensa_core_esp32s2 __attribute__((unused)) = {
-    .name = "esp32s2",
+    .name = "esp32",
     .gdb_regmap = {
         .reg = {
 #include "core-esp32s2/gdb-config.inc.c"

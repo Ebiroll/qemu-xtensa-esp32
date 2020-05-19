@@ -42,7 +42,7 @@
 #include "net/net.h"
 #include "elf.h"
 
-#define TYPE_ESP32_SOC "xtensa.esp32"
+#define TYPE_ESP32_SOC "xtensa.esp32s2"
 #define ESP32_SOC(obj) OBJECT_CHECK(Esp32SocState, (obj), TYPE_ESP32_SOC)
 
 #define TYPE_ESP32_CPU XTENSA_CPU_TYPE_NAME("esp32")
@@ -596,8 +596,13 @@ static void esp32_machine_inst_init(MachineState *machine)
         qemu_log("Not initializing SPI Flash\n");
     }
 
+    qemu_log("Init SOC\n");
+
     object_initialize_child(OBJECT(machine), "soc", s, sizeof(*s),
                             TYPE_ESP32_SOC, &error_abort, NULL);
+
+    qemu_log("Done\n");
+
 
     if (blk) {
         s->dport.flash_blk = blk;
