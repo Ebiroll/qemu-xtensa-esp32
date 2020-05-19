@@ -1,6 +1,7 @@
 #pragma once
+#include "esp32s2_reg.h"
 
-
+#if 0
 #define DR_REG_DPORT_BASE                       0x3ff00000
 #define DR_REG_AES_BASE                         0x3ff01000
 #define DR_REG_RSA_BASE                         0x3ff02000
@@ -143,3 +144,4 @@
 #define ESP32_SPI_COUNT             4
 #define ESP32_RTC_CNTL_SCRATCH_REG_COUNT     8
 
+#endif

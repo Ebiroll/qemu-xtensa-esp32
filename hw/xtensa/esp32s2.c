@@ -62,10 +62,12 @@ enum {
     ESP32_MEMREGION_RTCFAST_I,
 };
 
-/*
-/* Overall memory map */
-#define SOC_DROM_LOW    0x3F000000 // drom0 low address for icache
-#define SOC_DROM_HIGH   0x3FF80000 // dram0 high address for dcache
+
+// Overall memory map 
+// drom0 low address for icache
+#define SOC_DROM_LOW    0x3F000000 
+// dram0 high address for dcache
+#define SOC_DROM_HIGH   0x3FF80000 
 #define SOC_IROM_LOW    0x40080000
 #define SOC_IROM_HIGH   0x40800000
 #define SOC_IROM_MASK_LOW  0x40000000
@@ -82,7 +84,7 @@ enum {
 #define SOC_RTC_DATA_HIGH 0x50002000
 #define SOC_EXTRAM_DATA_LOW 0x3F500000
 #define SOC_EXTRAM_DATA_HIGH 0x3FF80000
-/* */
+
 
 static const struct MemmapEntry {
     hwaddr base;
@@ -92,8 +94,8 @@ static const struct MemmapEntry {
     [ESP32_MEMREGION_IROM] = { 0x40000000, 0x80000 },
     [ESP32_MEMREGION_DRAM] = { SOC_DRAM_LOW, SOC_DRAM_HIGH-SOC_DRAM_LOW},
     [ESP32_MEMREGION_IRAM] = { SOC_IRAM_LOW, SOC_IRAM_HIGH-SOC_IRAM_LOW },
-    [ESP32_MEMREGION_ICACHE0] = { SOC_DROM_LOW SOC_DROM_HIGH-SOC_DROM_LOW },
-    [ESP32_MEMREGION_ICACHE1] = { SOC_IRAM_LOW SOC_IRAM_HIGH-SOC_IRAM_LOW },
+    [ESP32_MEMREGION_ICACHE0] = { SOC_DROM_LOW ,SOC_DROM_HIGH-SOC_DROM_LOW },
+    [ESP32_MEMREGION_ICACHE1] = { SOC_IRAM_LOW ,SOC_IRAM_HIGH-SOC_IRAM_LOW },
     [ESP32_MEMREGION_RTCSLOW] = { SOC_RTC_DATA_LOW, SOC_RTC_DATA_HIGH-SOC_RTC_DATA_LOW },
     [ESP32_MEMREGION_RTCFAST_I] = {SOC_RTC_IRAM_LOW, SOC_RTC_IRAM_HIGH-SOC_RTC_IRAM_LOW},
     [ESP32_MEMREGION_RTCFAST_D] = { SOC_RTC_DRAM_LOW, SOC_RTC_DRAM_HIGH-SOC_RTC_DRAM_LOW},
@@ -246,7 +248,7 @@ static void esp32_soc_add_periph_device(MemoryRegion *dest, void* dev, hwaddr dp
     MemoryRegion *mr_apb = g_new(MemoryRegion, 1);
     char *name = g_strdup_printf("mr-apb-0x%08x", (uint32_t) dport_base_addr);
     memory_region_init_alias(mr_apb, OBJECT(dev), name, mr, 0, memory_region_size(mr));
-    memory_region_add_subregion_overlap(dest, dport_base_addr - DR_REG_DPORT_APB_BASE + APB_REG_BASE, mr_apb, 0);
+    memory_region_add_subregion_overlap(dest, dport_base_addr - DR_REG_SYSTEM_BASE + APB_REG_BASE, mr_apb, 0);
     g_free(name);
 }
 
@@ -254,7 +256,7 @@ static void esp32_soc_add_unimp_device(MemoryRegion *dest, const char* name, hwa
 {
     create_unimplemented_device(name, dport_base_addr, size);
     char * name_apb = g_strdup_printf("%s-apb", name);
-    create_unimplemented_device(name_apb, dport_base_addr - DR_REG_DPORT_APB_BASE + APB_REG_BASE, size);
+    create_unimplemented_device(name_apb, dport_base_addr - DR_REG_SYSTEM_BASE /*DR_REG_DPORT_APB_BASE*/ + APB_REG_BASE, size);
     g_free(name_apb);
 }
 
@@ -318,7 +320,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
 
     object_property_set_bool(OBJECT(&s->dport), true, "realized", &error_abort);
 
-    memory_region_add_subregion(sys_mem, DR_REG_DPORT_BASE,
+    memory_region_add_subregion(sys_mem, DR_REG_SYSTEM_BASE,
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dport), 0));
     qdev_connect_gpio_out_named(DEVICE(&s->dport), ESP32_DPORT_APPCPU_RESET_GPIO, 0,
                                 qdev_get_gpio_in_named(dev, ESP32_RTC_CPU_RESET_GPIO, 1));
@@ -358,7 +360,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     esp32_soc_add_periph_device(sys_mem, &s->gpio, DR_REG_GPIO_BASE);
 
     for (int i = 0; i < ESP32_UART_COUNT; ++i) {
-        const hwaddr uart_base[] = {DR_REG_UART_BASE, DR_REG_UART1_BASE, DR_REG_UART2_BASE};
+        const hwaddr uart_base[] = {DR_REG_UART_BASE, DR_REG_UART1_BASE};
         object_property_set_bool(OBJECT(&s->uart[i]), true, "realized", &error_abort);
         esp32_soc_add_periph_device(sys_mem, &s->uart[i], uart_base[i]);
         sysbus_connect_irq(SYS_BUS_DEVICE(&s->uart[i]), 0,
@@ -393,8 +395,8 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
                            qdev_get_gpio_in(intmatrix_dev, ETS_SPI0_INTR_SOURCE + i));
     }
 
-    object_property_set_bool(OBJECT(&s->rng), true, "realized", &error_abort);
-    esp32_soc_add_periph_device(sys_mem, &s->rng, ESP32_RNG_BASE);
+    //object_property_set_bool(OBJECT(&s->rng), true, "realized", &error_abort);
+    //esp32_soc_add_periph_device(sys_mem, &s->rng, ESP32_RNG_BASE);
 
     object_property_set_bool(OBJECT(&s->efuse), true, "realized", &error_abort);
     esp32_soc_add_periph_device(sys_mem, &s->efuse, DR_REG_EFUSE_BASE);
@@ -402,7 +404,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(intmatrix_dev, ETS_EFUSE_INTR_SOURCE));
 
 
-    esp32_soc_add_unimp_device(sys_mem, "esp32.analog", DR_REG_ANA_BASE, 0x1000);
+    //esp32_soc_add_unimp_device(sys_mem, "esp32.analog", DR_REG_ANA_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.rtcio", DR_REG_RTCIO_BASE, 0x400);
     esp32_soc_add_unimp_device(sys_mem, "esp32.rtcio", DR_REG_SENS_BASE, 0x400);
     esp32_soc_add_unimp_device(sys_mem, "esp32.iomux", DR_REG_IO_MUX_BASE, 0x2000);
@@ -411,7 +413,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     esp32_soc_add_unimp_device(sys_mem, "esp32.slchost", DR_REG_SLCHOST_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.apbctrl", DR_REG_APB_CTRL_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2s0", DR_REG_I2S_BASE, 0x1000);
-    esp32_soc_add_unimp_device(sys_mem, "esp32.i2s1", DR_REG_I2S1_BASE, 0x1000);
+    //esp32_soc_add_unimp_device(sys_mem, "esp32.i2s1", DR_REG_I2S1_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2c0", DR_REG_I2C_EXT_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2c1", DR_REG_I2C1_EXT_BASE, 0x1000);
 
@@ -430,7 +432,7 @@ static void esp32_soc_init(Object *obj)
         snprintf(name, sizeof(name), "cpu%d", i);
         object_initialize_child(obj, name, &s->cpu[i], sizeof(s->cpu[i]), TYPE_ESP32_CPU, &error_abort, NULL);
 
-        const uint32_t cpuid[ESP32_CPU_COUNT] = { 0xcdcd, 0xabab };
+        const uint32_t cpuid[ESP32_CPU_COUNT] = { 0xcdcd /*, 0xabab */};
         s->cpu[i].env.sregs[PRID] = cpuid[i];
 
         snprintf(name, sizeof(name), "cpu%d-mem", i);
@@ -562,7 +564,7 @@ static void esp32_machine_init_openeth(Esp32SocState *ss)
     SysBusDevice *sbd;
     NICInfo *nd = &nd_table[0];
     MemoryRegion* sys_mem = get_system_memory();
-    hwaddr reg_base = DR_REG_EMAC_BASE;
+    hwaddr reg_base = ADDR_FIFO_USB_0;
     hwaddr desc_base = reg_base + 0x400;
     qemu_irq irq = qdev_get_gpio_in(DEVICE(&ss->dport.intmatrix), ETS_ETH_MAC_INTR_SOURCE);
 

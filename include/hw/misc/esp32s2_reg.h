@@ -8,6 +8,153 @@
 
 #define SOC_MAX_CONTIGUOUS_RAM_SIZE (SOC_EXTRAM_DATA_HIGH - SOC_EXTRAM_DATA_LOW) ///< Largest span of contiguous memory (DRAM or IRAM) in the address space
 
+
+/* 
+PeriBUS1 0x3F4C1000
+
+mission Control
+Name Description Address Access
+Control Registers
+//IBUS permission control register 0.
+PMS_PRO_IRAM0_0_REG  0x0010 R/W
+PMS_PRO_DRAM0_0_REG DBUS permission control register 0. 0x0028 R/W
+PMS_PRO_DPORT_0_REG PeriBus1 permission control register 0. 0x003C R/W
+PMS_PRO_AHB_0_REG PeriBus2 permission control register 0. 0x005C R/W
+PMS_PRO_TRACE_0_REG Trace memory permission control register 0. 0x0070 R/W
+PMS_PRO_CACHE_0_REG Cache permission control register 0. 0x0078 R/W
+PMS_DMA_APB_I_0_REG Internal DMA permission control register 0. 0x008C R/W
+PMS_DMA_RX_I_0_REG RX Copy DMA permission control register 0. 0x009C R/W
+PMS_DMA_TX_I_0_REG TX Copy DMA permission control register 0. 0x00AC R/W
+PMS_CACHE_SOURCE_0_REG Cache access permission control register 0. 0x00C4 R/W
+PMS_APB_PERIPHERAL_0_REG Peripheral access permission control register 0. 0x00CC R/W
+PMS_OCCUPY_0_REG Occupy permission control register 0. 0x00D4 R/W
+PMS_CACHE_TAG_ACCESS_0_REG Cache tag permission control register 0. 0x00E4 R/W
+PMS_CACHE_MMU_ACCESS_0_REG Cache MMU permission control register 0. 0x00EC R/W
+PMS_CLOCK_GATE_REG_REG Clock gate register of permission control. 0x0104 R/W
+Configuration Registers
+PMS_PRO_IRAM0_1_REG IBUS permission control register 1. 0x0014 R/W
+PMS_PRO_IRAM0_2_REG IBUS permission control register 2. 0x0018 R/W
+PMS_PRO_IRAM0_3_REG IBUS permission control register 3. 0x001C R/W
+PMS_PRO_DRAM0_1_REG DBUS permission control register 1. 0x002C R/W
+PMS_PRO_DRAM0_2_REG DBUS permission control register 2. 0x0030 R/W
+PMS_PRO_DPORT_1_REG PeriBus1 permission control register 1. 0x0040 R/W
+PMS_PRO_DPORT_2_REG PeriBus1 permission control register 2. 0x0044 R/W
+PMS_PRO_DPORT_3_REG PeriBus1 permission control register 3. 0x0048 R/W
+PMS_PRO_DPORT_4_REG PeriBus1 permission control register 4. 0x004C R/W
+PMS_PRO_DPORT_5_REG PeriBus1 permission control register 5. 0x0050 R/W
+PMS_PRO_AHB_1_REG PeriBus2 permission control register 1. 0x0060 R/W
+PMS_PRO_AHB_2_REG PeriBus2 permission control register 2. 0x0064 R/W
+PMS_PRO_TRACE_1_REG Trace memory permission control register 1. 0x0074 R/W
+PMS_PRO_CACHE_1_REG Cache permission control register 1. 0x007C R/W
+PMS_DMA_APB_I_1_REG Internal DMA permission control register 1. 0x0090 R/W
+PMS_DMA_RX_I_1_REG RX Copy DMA permission control register 1. 0x00A0 R/W
+PMS_DMA_TX_I_1_REG TX Copy DMA permission control register 1. 0x00B0 R/W
+PMS_APB_PERIPHERAL_1_REG Peripheral access permission control register 1. 0x00D0 R/W
+PMS_OCCUPY_1_REG Occupy permission control register 1. 0x00D8 R/W
+PMS_OCCUPY_3_REG Occupy permission control register 3. 0x00E0 R/W
+PMS_CACHE_TAG_ACCESS_1_REG Cache tag permission control register 1. 0x00E8 R/W
+PMS_CACHE_MMU_ACCESS_1_REG Cache MMU permission control register 1. 0x00F0 R/W
+Interrupt Registers
+PMS_PRO_IRAM0_4_REG IBUS permission control register 4. 0x0020 varies
+PMS_PRO_IRAM0_5_REG IBUS status register. 0x0024 RO
+PMS_PRO_DRAM0_3_REG DBUS permission control register 3. 0x0034 varies
+Espressif Systems 437
+Submit Documentation Feedback
+ESP32-S2 TRM (Preliminary V0.3)
+23. Permission Control
+Name Description Address Access
+PMS_PRO_DRAM0_4_REG DBUS status register. 0x0038 RO
+PMS_PRO_DPORT_6_REG PeriBus1 permission control register 6. 0x0054 varies
+PMS_PRO_DPORT_7_REG PeriBus1 status register. 0x0058 RO
+PMS_PRO_AHB_3_REG PeriBus2 permission control register 3. 0x0068 varies
+PMS_PRO_AHB_4_REG PeriBus2 status register. 0x006C RO
+PMS_PRO_CACHE_2_REG Cache permission control register 2. 0x0080 varies
+PMS_PRO_CACHE_3_REG Icache status register. 0x0084 RO
+PMS_PRO_CACHE_4_REG Dcache status register. 0x0088 RO
+PMS_DMA_APB_I_2_REG Internal DMA permission control register 2. 0x0094 varies
+PMS_DMA_APB_I_3_REG Internal DMA status register. 0x0098 RO
+PMS_DMA_RX_I_2_REG RX Copy DMA permission control register 2. 0x00A4 varies
+PMS_DMA_RX_I_3_REG RX Copy DMA status register. 0x00A8 RO
+PMS_DMA_TX_I_2_REG TX Copy DMA permission control register 2. 0x00B4 varies
+PMS_DMA_TX_I_3_REG TX Copy DMA status register. 0x00B8 RO
+PMS_APB_PERIPHERAL_INTR_REG PeriBus2 permission control register. 0x00F4 varies
+PMS_APB_PERIPHERAL_STATUS_REG PeriBus2 peripheral access status register. 0x00F8 RO
+PMS_CPU_PERIPHERAL_INTR_REG PeriBus1 permission control register. 0x00FC varies
+PMS_CPU_PERIPHERAL_STATUS_REG PeriBus1 peripheral access status register. 0x0100 RO
+Version Control Register
+PMS_DATE Version control register. 0x0FFC R/W
+
+
+*/
+
+/*
+HMAC
+PeriBUS1 0x3F43D000
+PeriBUS2 0x6003D000
+*/
+/* ULP
+
+26.4 ULP Coprocessor Workflow
+ULP coprocessor is designed to operate independently of the CPU, while the CPU is either in sleep or
+running.
+
+
+In a typical power-saving scenario, the chip goes to Deep-sleep mode to lower power consumption. Before
+setting the chip to sleep mode, users should complete the following operations.
+1. Flash the program to be executed by ULP coprocessor into RTC slow memory.
+2. Select the working ULP coprocessor by configuring the register RTC_CNTL_COCPU_SEL.
+• 0: select ULP-RISCV
+• 1: select ULP-FSM
+
+3. Set sleep cycles for the timer by configuring RTC_CNTL_ULP_CP_TIMER_1_REG.
+
+4. Enable the timer by software or by RTC GPIO;
+• By software: set the register RTC_CNTL_ULP_CP_SLP_TIMER_EN.
+• By RTC GPIO: set the register RTC_CNTL_ULP_CP_GPIO_WAKEUP_ENA.
+
+5. Set the system into sleep mode.
+
+
+When the system is in Deep-sleep mode:
+1. The timer periodically sets the low-power controller (see Chapter Low Power Management) to Monitor
+mode and then wakes up the coprocessor.
+2. Coprocessor executes some necessary operations, such as monitoring external environment via
+low-power sensors.
+3. After the operations are finished, the system goes back to Deep-sleep mode.
+4. ULP coprocessor goes back to halt mode and waits for next wakeup.
+
+In monitor mode, ULP coprocessor is woken up and goes to halt as shown in Figure 26-4.
+Figure 26-4. Sample of a ULP Operation Sequence
+1. Enable the timer and the timer starts counting.
+2. The timer expires and wakes up the ULP coprocessor. ULP coprocessor starts running and executes the
+program flashed in RTC slow memory.
+
+3. ULP coprocessor goes to halt and the timer starts counting again.
+• Put ULP-RISCV into HALT: set the register RTC_CNTL_COCPU_DONE,
+• Put ULP-FSM into HALT: execute HALT instruction.
+
+4. Disable the timer by ULP program or by software. The system exits from monitor mode.
+• Disabled by software: clear the register RTC_CNTL_ULP_CP_SLP_TIMER_EN.
+• Disabled by RTC GPIO: clear the register RTC_CNTL_ULP_CP_GPIO_WAKEUP_ENA, and set the
+register RTC_CNTL_ULP_CP_GPIO_WAKEUP_CLR.
+
+Note:
+• If the timer is enabled by software (RTC GPIO), it should be disabled by software (RTC GPIO).
+• Before setting ULP-RISCV to HALT, users should configure the register RTC_CNTL_COCPU_DONE first,
+
+therefore, it is recommended to end the flashed program with the following pattern:
+– Set the register RTC_CNTL_COCPU_DONE to end the operation of ULP-RISCV and put it into halt;
+– Set the register RTC_CNTL_COCPU_SHUT_RESET_EN to reset ULP-RISCV.
+Enough time is reserved for the ULP-RISCV to complete the operations above before it goes to halt.
+The relationship between the signals and registers is shown in Figure 26-5.
+
+
+ RV32IMC
+
+
+
+*/
+
 #define DR_REG_SYSTEM_BASE                      0x3f4c0000
 #define DR_REG_SENSITIVE_BASE                   0x3f4c1000
 #define DR_REG_INTERRUPT_BASE                   0x3f4c2000
@@ -66,6 +213,23 @@
 #define DR_REG_USB_WRAP_BASE                    0x3f439000
 #define DR_REG_APB_SARADC_BASE                  0x3f440000
 #define DR_REG_USB_BASE                         0x60080000
+
+
+#define ADDR_RTCSLOW 0x60021000
+#define ADDR_FIFO_UART0 0x60000000
+#define ADDR_FIFO_UART1 0x60010000
+#define ADDR_FIFO_UART2 0x6002E000
+#define ADDR_FIFO_I2S0 0x6000F004
+#define ADDR_FIFO_I2S1 0x6002D004
+#define ADDR_FIFO_RMT_CH0 0x60016000
+#define ADDR_FIFO_RMT_CH1 0x60016004
+#define ADDR_FIFO_RMT_CH2 0x60016008
+#define ADDR_FIFO_RMT_CH3 0x6001600C
+#define ADDR_FIFO_I2C_EXT0 0x6001301C
+#define ADDR_FIFO_I2C_EXT1 0x6002701C
+#define ADDR_FIFO_USB_0 0x60080020
+#define ADDR_FIFO_USB_1_L 0x60081000
+#define ADDR_FIFO_USB_1_H 0x60090FFF
 
 #define REG_UHCI_BASE(i)         (DR_REG_UHCI0_BASE)
 #define REG_UART_BASE( i )  (DR_REG_UART_BASE + (i) * 0x10000 )

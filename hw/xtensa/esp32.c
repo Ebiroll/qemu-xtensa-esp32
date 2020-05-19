@@ -7,7 +7,7 @@
  * it under the terms of the GNU General Public License version 2 or
  * (at your option) any later version.
  */
-
+#if 0
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
@@ -639,3 +639,4 @@ static void esp32_machine_init(MachineClass *mc)
 
 DEFINE_MACHINE("esp32", esp32_machine_init)
 
+#endif

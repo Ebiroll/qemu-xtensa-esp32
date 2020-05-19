@@ -20,7 +20,7 @@
 #include "hw/misc/esp32_reg.h"
 #include "hw/misc/esp32_dport.h"
 #include "target/xtensa/cpu.h"
-
+#if 0
 
 #define ESP32_DPORT_SIZE        (DR_REG_DPORT_APB_BASE - DR_REG_DPORT_BASE)
 
@@ -372,3 +372,5 @@ static void esp32_dport_register_types(void)
 }
 
 type_init(esp32_dport_register_types)
+
+#endif
