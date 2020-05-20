@@ -43,9 +43,9 @@
 #include "elf.h"
 
 #define TYPE_ESP32_SOC "xtensa.esp32s2"
-#define ESP32_SOC(obj) OBJECT_CHECK(Esp32SocState, (obj), TYPE_ESP32_SOC)
+#define ESP32_SOC(obj) OBJECT_CHECK(Esp32S2SocState, (obj), TYPE_ESP32_SOC)
 
-#define TYPE_ESP32_CPU XTENSA_CPU_TYPE_NAME("esp32")
+#define TYPE_ESP32_CPU XTENSA_CPU_TYPE_NAME("esp32s2")
 
 typedef struct XtensaCPU XtensaCPU;
 
@@ -110,7 +110,7 @@ static const struct MemmapEntry {
 #define ESP32_SOC_RESET_ALL       (ESP32_SOC_RESET_RTC | ESP32_SOC_RESET_DIG)
 
 
-typedef struct Esp32SocState {
+typedef struct Esp32S2SocState {
     /*< private >*/
     SysBusDevice parent_obj;
 
@@ -131,12 +131,12 @@ typedef struct Esp32SocState {
     MemoryRegion cpu_specific_mem[ESP32_CPU_COUNT];
 
     uint32_t requested_reset;
-} Esp32SocState;
+} Esp32S2SocState;
 
 
 static void esp32_dig_reset(void *opaque, int n, int level)
 {
-    Esp32SocState *s = ESP32_SOC(opaque);
+    Esp32S2SocState *s = ESP32_SOC(opaque);
     if (level) {
         s->requested_reset = ESP32_SOC_RESET_DIG;
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
@@ -145,7 +145,7 @@ static void esp32_dig_reset(void *opaque, int n, int level)
 
 static void esp32_cpu_reset(void* opaque, int n, int level)
 {
-    Esp32SocState *s = ESP32_SOC(opaque);
+    Esp32S2SocState *s = ESP32_SOC(opaque);
     if (level) {
         s->requested_reset = (n == 0) ? ESP32_SOC_RESET_PROCPU : ESP32_SOC_RESET_APPCPU;
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
@@ -164,7 +164,7 @@ static void remove_cpu_watchpoints(XtensaCPU* xcs)
 
 static void esp32_soc_reset(DeviceState *dev)
 {
-    Esp32SocState *s = ESP32_SOC(dev);
+    Esp32S2SocState *s = ESP32_SOC(dev);
 
     if (s->requested_reset == 0) {
         s->requested_reset = ESP32_SOC_RESET_ALL;
@@ -208,7 +208,7 @@ static void esp32_soc_reset(DeviceState *dev)
 
 static void esp32_cpu_stall(void* opaque, int n, int level)
 {
-    Esp32SocState *s = ESP32_SOC(opaque);
+    Esp32S2SocState *s = ESP32_SOC(opaque);
 
     bool stall;
     if (n == 0) {
@@ -222,7 +222,7 @@ static void esp32_cpu_stall(void* opaque, int n, int level)
 
 static void esp32_clk_update(void* opaque, int n, int level)
 {
-    Esp32SocState *s = ESP32_SOC(opaque);
+    Esp32S2SocState *s = ESP32_SOC(opaque);
     if (!level) {
         return;
     }
@@ -262,7 +262,7 @@ static void esp32_soc_add_unimp_device(MemoryRegion *dest, const char* name, hwa
 
 static void esp32_soc_realize(DeviceState *dev, Error **errp)
 {
-    Esp32SocState *s = ESP32_SOC(dev);
+    Esp32S2SocState *s = ESP32_SOC(dev);
     MachineState *ms = MACHINE(qdev_get_machine());
 
     const struct MemmapEntry *memmap = esp32_memmap;
@@ -420,9 +420,9 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     qemu_register_reset((QEMUResetHandler*) esp32_soc_reset, dev);
 }
 
-static void esp32_soc_init(Object *obj)
+static void esp32s2_soc_init(Object *obj)
 {
-    Esp32SocState *s = ESP32_SOC(obj);
+    Esp32S2SocState *s = ESP32_SOC(obj);
     MachineState *ms = MACHINE(qdev_get_machine());
     char name[16];
 
@@ -499,16 +499,16 @@ static void esp32_soc_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(s), esp32_cpu_reset, ESP32_RTC_CPU_RESET_GPIO, ESP32_CPU_COUNT);
     qdev_init_gpio_in_named(DEVICE(s), esp32_cpu_stall, ESP32_RTC_CPU_STALL_GPIO, ESP32_CPU_COUNT);
     qdev_init_gpio_in_named(DEVICE(s), esp32_clk_update, ESP32_RTC_CLK_UPDATE_GPIO, 1);
-/*
-    const char *rom_filename = "rom.bin";
+
+    const char *rom_filename = "s2rom.bin";
 
     rom_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, rom_filename);
     if (!rom_filename ||
-        load_image_targphys(rom_filename, 0x40000000, 794624) < 0) { // 412384*
+        load_image_targphys(rom_filename, 0x40000000, 128*1024) < 0) { 
         error_report("unable to load ROM image '%s'\n", rom_filename);
         exit(EXIT_FAILURE);
     }
-*/
+
 }
 
 static Property esp32_soc_properties[] = {
@@ -527,8 +527,8 @@ static void esp32_soc_class_init(ObjectClass *klass, void *data)
 static const TypeInfo esp32_soc_info = {
     .name = TYPE_ESP32_SOC,
     .parent = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(Esp32SocState),
-    .instance_init = esp32_soc_init,
+    .instance_size = sizeof(Esp32S2SocState),
+    .instance_init = esp32s2_soc_init,
     .class_init = esp32_soc_class_init
 };
 
@@ -547,7 +547,7 @@ static uint64_t translate_phys_addr(void *opaque, uint64_t addr)
     return cpu_get_phys_page_debug(CPU(cpu), addr);
 }
 
-static void esp32_machine_init_spi_flash(MachineState *machine, Esp32SocState *s, BlockBackend* blk)
+static void esp32_machine_init_spi_flash(MachineState *machine, Esp32S2SocState *s, BlockBackend* blk)
 {
     /* "main" flash chip is attached to SPI1 */
     DeviceState *spi_master = DEVICE(&s->spi[1]);
@@ -559,7 +559,7 @@ static void esp32_machine_init_spi_flash(MachineState *machine, Esp32SocState *s
                                 qdev_get_gpio_in_named(flash_dev, SSI_GPIO_CS, 0));
 }
 
-static void esp32_machine_init_openeth(Esp32SocState *ss)
+static void esp32_machine_init_openeth(Esp32S2SocState *ss)
 {
     SysBusDevice *sbd;
     NICInfo *nd = &nd_table[0];
@@ -585,7 +585,7 @@ static void esp32_machine_init_openeth(Esp32SocState *ss)
 
 static void esp32_machine_inst_init(MachineState *machine)
 {
-    Esp32SocState *s = g_new0(Esp32SocState, 1);
+    Esp32S2SocState *s = g_new0(Esp32S2SocState, 1);
 
     BlockBackend* blk = NULL;
     DriveInfo *dinfo = drive_get_next(IF_MTD);
@@ -662,8 +662,8 @@ static void esp32_machine_init(MachineClass *mc)
 {
     mc->desc = "Espressif ESP32S2 machine";
     mc->init = esp32_machine_inst_init;
-    mc->max_cpus = 2;
-    mc->default_cpus = 2;
+    mc->max_cpus = 1;
+    mc->default_cpus = 1;
 }
 
 DEFINE_MACHINE("esp32s2", esp32_machine_init)
