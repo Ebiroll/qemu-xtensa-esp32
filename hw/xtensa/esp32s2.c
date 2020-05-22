@@ -198,11 +198,13 @@ static void esp32_soc_reset(DeviceState *dev)
         remove_cpu_watchpoints(&s->cpu[0]);
         cpu_reset(CPU(&s->cpu[0]));
     }
+    /*
     if (s->requested_reset & ESP32_SOC_RESET_APPCPU) {
         xtensa_select_static_vectors(&s->cpu[1].env, s->rtc_cntl.stat_vector_sel[1]);
         remove_cpu_watchpoints(&s->cpu[0]);
         cpu_reset(CPU(&s->cpu[1]));
     }
+    */
     s->requested_reset = 0;
 }
 
@@ -322,12 +324,12 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
 
     memory_region_add_subregion(sys_mem, DR_REG_SYSTEM_BASE,
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dport), 0));
-    qdev_connect_gpio_out_named(DEVICE(&s->dport), ESP32_DPORT_APPCPU_RESET_GPIO, 0,
-                                qdev_get_gpio_in_named(dev, ESP32_RTC_CPU_RESET_GPIO, 1));
-    qdev_connect_gpio_out_named(DEVICE(&s->dport), ESP32_DPORT_APPCPU_STALL_GPIO, 0,
-                                qdev_get_gpio_in_named(dev, ESP32_RTC_CPU_STALL_GPIO, 1));
-    qdev_connect_gpio_out_named(DEVICE(&s->rtc_cntl), ESP32_DPORT_CLK_UPDATE_GPIO, 0,
-                                qdev_get_gpio_in_named(dev, ESP32_RTC_CLK_UPDATE_GPIO, 0));
+    //qdev_connect_gpio_out_named(DEVICE(&s->dport), ESP32_DPORT_APPCPU_RESET_GPIO, 0,
+    //                            qdev_get_gpio_in_named(dev, ESP32_RTC_CPU_RESET_GPIO, 1));
+    //qdev_connect_gpio_out_named(DEVICE(&s->dport), ESP32_DPORT_APPCPU_STALL_GPIO, 0,
+    //                            qdev_get_gpio_in_named(dev, ESP32_RTC_CPU_STALL_GPIO, 1));
+    //qdev_connect_gpio_out_named(DEVICE(&s->rtc_cntl), ESP32_DPORT_CLK_UPDATE_GPIO, 0,
+    //                            qdev_get_gpio_in_named(dev, ESP32_RTC_CLK_UPDATE_GPIO, 0));
     DeviceState* intmatrix_dev = DEVICE(&s->dport.intmatrix);
 
     if (s->dport.flash_blk) {
@@ -642,6 +644,7 @@ static void esp32_machine_inst_init(MachineState *machine)
             s->cpu[0].env.pc = elf_entry;
         }
     } else {
+        /*
         char *rom_binary = qemu_find_file(QEMU_FILE_TYPE_BIOS, "esp32-r0-rom.bin");
         if (rom_binary == NULL) {
             error_report("Error: -bios argument not set, and ROM code binary not found");
@@ -654,6 +657,8 @@ static void esp32_machine_inst_init(MachineState *machine)
             exit(1);
         }
         g_free(rom_binary);
+                */
+
     }
 }
 

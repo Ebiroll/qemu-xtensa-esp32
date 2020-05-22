@@ -338,11 +338,11 @@ static void esp32s2_dport_realize(DeviceState *dev, Error **errp)
 
     //object_property_set_bool(OBJECT(&s->crosscore_int), true, "realized", &error_abort);
 
-    for (int index = 0; index < ESP32_DPORT_CROSSCORE_INT_COUNT; ++index) {
-        qemu_irq target = qdev_get_gpio_in(DEVICE(&s->intmatrix), ETS_FROM_CPU_INTR0_SOURCE + index);
-        assert(target);
-        sysbus_connect_irq(SYS_BUS_DEVICE(&s->crosscore_int), index, target);
-    }
+    //for (int index = 0; index < ESP32_DPORT_CROSSCORE_INT_COUNT; ++index) {
+    //    qemu_irq target = qdev_get_gpio_in(DEVICE(&s->intmatrix), ETS_FROM_CPU_INTR0_SOURCE + index);
+    //    assert(target);
+    //    sysbus_connect_irq(SYS_BUS_DEVICE(&s->crosscore_int), index, target);
+    //}
 }
 
 static void esp32_cache_init_region(Esp32CacheState *cs,
