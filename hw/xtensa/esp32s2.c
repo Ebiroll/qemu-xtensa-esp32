@@ -41,6 +41,9 @@
 #include "exec/exec-all.h"
 #include "net/net.h"
 #include "elf.h"
+//#include "exec/memory.h"
+#include "migration/vmstate.h"
+
 
 #define TYPE_ESP32_SOC "xtensa.esp32s2"
 #define ESP32_SOC(obj) OBJECT_CHECK(Esp32S2SocState, (obj), TYPE_ESP32_SOC)
@@ -623,6 +626,18 @@ static void esp32_machine_inst_init(MachineState *machine)
      * so that ELF gets loaded into virtual addresses
      */
     cpu_reset(CPU(&s->cpu[0]));
+ 
+   /*
+     MemoryRegion *system_memory = get_system_memory();
+    // TODO, Figure out MMU mapping and related finetuning
+      MemoryRegion *ram;
+      ram = g_malloc(sizeof(*ram));
+      memory_region_init_ram(ram, NULL, "esp32.iram0", 0x20000000,  // 00000
+                           &error_abort);
+
+      vmstate_register_ram_global(ram);
+      memory_region_add_subregion(system_memory, 0x20000000, ram);
+    */
 
     const char *load_elf_filename = NULL;
     if (machine->firmware) {
