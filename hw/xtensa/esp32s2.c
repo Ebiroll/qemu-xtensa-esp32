@@ -255,7 +255,7 @@ static void esp32_soc_add_periph_device(MemoryRegion *dest, void* dev, hwaddr dp
     MemoryRegion *mr_apb = g_new(MemoryRegion, 1);
     char *name = g_strdup_printf("mr-apb-0x%08x", (uint32_t) dport_base_addr);
     memory_region_init_alias(mr_apb, OBJECT(dev), name, mr, 0, memory_region_size(mr));
-    memory_region_add_subregion_overlap(dest, dport_base_addr - DR_REG_SYSTEM_BASE + APB_REG_BASE, mr_apb, 0);
+    memory_region_add_subregion_overlap(dest, dport_base_addr - DR_REG_UART_BASE + APB_REG_BASE, mr_apb, 0);
     g_free(name);
 }
 
@@ -263,9 +263,16 @@ static void esp32_soc_add_unimp_device(MemoryRegion *dest, const char* name, hwa
 {
     create_unimplemented_device(name, dport_base_addr, size);
     char * name_apb = g_strdup_printf("%s-apb", name);
-    create_unimplemented_device(name_apb, dport_base_addr - DR_REG_SYSTEM_BASE /*DR_REG_DPORT_APB_BASE*/ + APB_REG_BASE, size);
+    create_unimplemented_device(name_apb, dport_base_addr - DR_REG_UART_BASE /*DR_REG_DPORT_APB_BASE*/ + APB_REG_BASE, size);
     g_free(name_apb);
 }
+
+void  stopme(void);
+
+void  stopme(void) {
+    printf("stop\n");
+}
+
 
 static void esp32_soc_realize(DeviceState *dev, Error **errp)
 {
@@ -373,6 +380,8 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
 
     object_property_set_bool(OBJECT(&s->gpio), true, "realized", &error_abort);
     esp32_soc_add_periph_device(sys_mem, &s->gpio, DR_REG_GPIO_BASE);
+
+    stopme();
 
     for (int i = 0; i < ESP32_UART_COUNT; ++i) {
         const hwaddr uart_base[] = {DR_REG_UART_BASE, DR_REG_UART1_BASE};
@@ -668,7 +677,7 @@ static void esp32_machine_inst_init(MachineState *machine)
         load_elf_filename = machine->firmware;
     }
     if (machine->kernel_filename) {
-        qemu_log("Warning: both -bios and -kernel arguments specified. Only loading the the -kernel file.\n");
+        qemu_log("Loading elf.\n");
         load_elf_filename = machine->kernel_filename;
     }
 
@@ -680,6 +689,18 @@ static void esp32_machine_inst_init(MachineState *machine)
                                &elf_entry, &elf_lowaddr,
                                NULL, 0, EM_XTENSA, 0, 0);
         if (success > 0) {
+            //s->cpu[0].env.pc = elf_entry;
+
+            printf("Elf entry %08X\n",(unsigned int)elf_entry);
+            static const uint8_t jx_a0[] = {
+                0xa0, 0, 0,
+            };            
+            s->cpu[0].env.regs[0] = elf_entry;
+
+            cpu_physical_memory_write(s->cpu[0].env.pc, jx_a0, sizeof(jx_a0));
+
+        } else {
+            qemu_log("Failed loading elf.\n"); 
             s->cpu[0].env.pc = elf_entry;
         }
     } else {

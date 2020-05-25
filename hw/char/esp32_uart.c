@@ -65,6 +65,8 @@ static uint64_t uart_read(void *opaque, hwaddr addr, unsigned int size)
     ESP32UARTState *s = ESP32_UART(opaque);
     uint64_t r = 0;
 
+    //printf("uart_read\n");
+
     switch (addr) {
     case A_UART_FIFO:
         if (fifo8_num_used(&s->rx_fifo) == 0) {
@@ -105,12 +107,16 @@ static void uart_write(void *opaque, hwaddr addr,
 {
     ESP32UARTState *s = ESP32_UART(opaque);
 
+    //printf("uart_write\n");
+
+
     switch (addr) {
     case A_UART_FIFO:
         if (fifo8_num_free(&s->tx_fifo) == 0) {
             error_report("esp_uart: write to UART FIFO while it is full");
         } else {
             fifo8_push(&s->tx_fifo, (uint8_t) (value & 0xff));
+           // printf("[%c]\n",(uint8_t) (value & 0xff));
             uart_transmit(NULL, G_IO_OUT, s);
         }
         break;
