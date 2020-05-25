@@ -55,6 +55,7 @@ typedef struct XtensaCPU XtensaCPU;
 
 enum {
     ESP32_MEMREGION_IROM,
+    ESP32_MEMREGION_IROM1,
     ESP32_MEMREGION_DROM,
     ESP32_MEMREGION_DRAM,
     ESP32_MEMREGION_IRAM,
@@ -95,6 +96,7 @@ static const struct MemmapEntry {
 } esp32_memmap[] = {
     [ESP32_MEMREGION_DROM] = { SOC_DROM_LOW, SOC_DROM_HIGH-SOC_DROM_LOW},
     [ESP32_MEMREGION_IROM] = { 0x40000000, 0x80000 },
+    [ESP32_MEMREGION_IROM1] = { 0x3ffa0000, 0x10000 },
     [ESP32_MEMREGION_DRAM] = { SOC_DRAM_LOW, SOC_DRAM_HIGH-SOC_DRAM_LOW},
     [ESP32_MEMREGION_IRAM] = { SOC_IRAM_LOW, SOC_IRAM_HIGH-SOC_IRAM_LOW },
     [ESP32_MEMREGION_ICACHE0] = { SOC_DROM_LOW ,SOC_DROM_HIGH-SOC_DROM_LOW },
@@ -277,6 +279,8 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     MemoryRegion *iram = g_new(MemoryRegion, 1);
     MemoryRegion *drom = g_new(MemoryRegion, 1);
     MemoryRegion *irom = g_new(MemoryRegion, 1);
+    MemoryRegion *irom1 = g_new(MemoryRegion, 1);
+
     MemoryRegion *icache0 = g_new(MemoryRegion, 1);
     MemoryRegion *icache1 = g_new(MemoryRegion, 1);
     MemoryRegion *rtcslow = g_new(MemoryRegion, 1);
@@ -286,6 +290,12 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     memory_region_init_rom(irom, NULL, "esp32.irom",
                            memmap[ESP32_MEMREGION_IROM].size, &error_fatal);
     memory_region_add_subregion(sys_mem, memmap[ESP32_MEMREGION_IROM].base, irom);
+
+    memory_region_init_rom(irom1, NULL, "esp32.irom1",
+                           memmap[ESP32_MEMREGION_IROM1].size, &error_fatal);
+    memory_region_add_subregion(sys_mem, memmap[ESP32_MEMREGION_IROM1].base, irom1);
+
+
 
     memory_region_init_alias(drom, NULL, "esp32.drom", irom, 0x60000, memmap[ESP32_MEMREGION_DROM].size);
     memory_region_add_subregion(sys_mem, memmap[ESP32_MEMREGION_DROM].base, drom);
@@ -409,6 +419,10 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
                        qdev_get_gpio_in(intmatrix_dev, ETS_EFUSE_INTR_SOURCE));
 
 
+
+
+    esp32_soc_add_unimp_device(sys_mem, "esp32.extmem", DR_REG_EXTMEM_BASE, 0x1000);
+
     //esp32_soc_add_unimp_device(sys_mem, "esp32.analog", DR_REG_ANA_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.rtcio", DR_REG_RTCIO_BASE, 0x400);
     esp32_soc_add_unimp_device(sys_mem, "esp32.rtcio", DR_REG_SENS_BASE, 0x400);
@@ -506,6 +520,15 @@ static void esp32s2_soc_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(s), esp32_clk_update, ESP32_RTC_CLK_UPDATE_GPIO, 1);
 
     const char *rom_filename = "s2rom.bin";
+    const char *irom_filename = "irom1.bin";
+
+    irom_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, irom_filename);
+    if (!irom_filename ||
+        load_image_targphys(irom_filename, 0x3ffa0000, 64*1024) < 0) { 
+        error_report("unable to load ROM image '%s'\n", irom_filename);
+        exit(EXIT_FAILURE);
+    }
+
 
     rom_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, rom_filename);
     if (!rom_filename ||
@@ -513,6 +536,7 @@ static void esp32s2_soc_init(Object *obj)
         error_report("unable to load ROM image '%s'\n", rom_filename);
         exit(EXIT_FAILURE);
     }
+
 
 }
 

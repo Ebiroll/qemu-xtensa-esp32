@@ -370,6 +370,16 @@ static void esp32s2_dport_init(Object *obj)
                           TYPE_ESP32_DPORT, DR_REG_DMA_COPY_BASE-DR_REG_SENSITIVE_BASE);
     sysbus_init_mmio(sbd, &s->iomem);
 
+/*
+perif
+0x600000000x600B_FFFF
+
+0x618000000x6180_3FFF
+*/
+
+
+
+
     object_initialize_child(obj, "intmatrix", &s->intmatrix, sizeof(s->intmatrix), TYPE_ESP32_INTMATRIX, &error_abort, NULL);
     memory_region_add_subregion_overlap(&s->iomem, DR_REG_INTERRUPT_BASE, &s->intmatrix.iomem, -1);
 
