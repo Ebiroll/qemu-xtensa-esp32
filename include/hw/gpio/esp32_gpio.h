@@ -9,7 +9,8 @@
 
 REG32(GPIO_STRAP, 0x0038)
 
-#define ESP32_STRAP_MODE_FLASH_BOOT 0x12
+// 0x12
+#define ESP32_STRAP_MODE_FLASH_BOOT 0x0a 
 #define ESP32_STRAP_MODE_UART_BOOT  0x0f
 
 typedef struct Esp32GpioState {

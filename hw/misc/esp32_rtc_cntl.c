@@ -42,6 +42,11 @@ static uint64_t esp32_rtc_cntl_read(void *opaque, hwaddr addr, unsigned int size
         r = s->time_reg >> 32;
         break;
 
+    case 0x38:
+            printf("read RTC_CNTL_RESET_STATE_REG\n");
+            r=0x3041;
+            break;         
+    // From esp32
     case A_RTC_CNTL_RESET_STATE:
         r = FIELD_DP32(r, RTC_CNTL_RESET_STATE, RESET_CAUSE_PROCPU, s->reset_cause[0]);
         r = FIELD_DP32(r, RTC_CNTL_RESET_STATE, RESET_CAUSE_APPCPU, s->reset_cause[1]);

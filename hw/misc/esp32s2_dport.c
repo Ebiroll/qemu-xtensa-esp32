@@ -80,6 +80,29 @@ registers contains three parts as follows:
 2. Area start address: APB_CTRL_X_ACS_n_ADDR_REG, which represents the physical address;
 3. Area length: APB_CTRL_X_ACS_n_SIZE_REG in multiples of 64 KB;
 
+When loading boot code,
+Loading section .dram0.data, size 0x4 lma 0x3ffe8100
+Loading section .dram0.rodata, size 0x17d4 lma 0x3ffe8104
+Loading section .iram.text, size 0x14b0 lma 0x40050000
+Loading section .iram_loader.text, size 0x210b lma 0x40054000
+Start address 0x400502d8, load size 19859
+
+Panic at 40013ab7
+Fatal exception (15): LoadStorePIFAddrError
+epc1=0x4000ff4b, epc2=0x00000000, epc3=0x00000000, excvaddr=0x60080010, depc=0x00000000
+
+#0  0x40013ab7 in dfu_updater_flash_read ()
+#1  0x40013ef2 in usb_dc_attach ()
+#2  0x40014fe4 in usb_enable ()
+#3  0x40013184 in cdc_acm_init ()
+#4  0x4001282b in Uart_Init_USB ()
+#5  0x4000f5e1 in boot_prepare ()
+#6  0x4000f91a in main ()
+0x40013ab7 <dfu_updater_flash_read+207> l32i.n a4, a2, 16   
+(gdb) p/x $a2
+$1 = 0x60080000
+
+
 */
 
 
@@ -100,6 +123,29 @@ static uint64_t esp32s2_dport_read(void *opaque, hwaddr addr, unsigned int size)
 {
     //Esp32DportState *s = ESP32_DPORT(opaque);
     uint64_t r = 0;
+
+    switch (addr) {
+        case 0x8c:
+            printf("read INTERRUPT_PRO_I2S0_INT_MAP\n");
+            r=0x10;
+            break; 
+
+ 
+
+       //RTC_CNTL_RESET_STATE_REG
+
+
+      default:
+         printf("dport_read  %08X\n",(unsigned int)addr);
+        break;
+
+    }
+
+
+
+
+
+
     /*
 
     switch (addr) {
@@ -156,6 +202,18 @@ static uint64_t esp32s2_dport_read(void *opaque, hwaddr addr, unsigned int size)
 static void esp32s2_dport_write(void *opaque, hwaddr addr,
                               uint64_t value, unsigned int size)
 {
+
+    switch (addr) {
+        case 0x8c:
+            printf("write INTERRUPT_PRO_I2S0_INT_MAP\n");
+            break;
+
+      default:
+         printf("dport_write  %08X\n",(unsigned int)addr);
+        break;
+
+    }
+
     /*
     Esp32DportState *s = ESP32_DPORT(opaque);
     bool old_state;
@@ -367,7 +425,7 @@ static void esp32s2_dport_init(Object *obj)
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
     memory_region_init_io(&s->iomem, obj, &esp32_dport_ops, s,
-                          TYPE_ESP32_DPORT, DR_REG_DMA_COPY_BASE-DR_REG_SENSITIVE_BASE);
+                          TYPE_ESP32_DPORT, 0x1000 /* DR_REG_DMA_COPY_BASE-DR_REG_SENSITIVE_BASE*/);
     sysbus_init_mmio(sbd, &s->iomem);
 
 /*

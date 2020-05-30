@@ -45,6 +45,8 @@
 #include "migration/vmstate.h"
 
 
+// TODO, map flash when Cache_Ibus_MMU_Set is called
+
 #define TYPE_ESP32_SOC "xtensa.esp32s2"
 #define ESP32_SOC(obj) OBJECT_CHECK(Esp32S2SocState, (obj), TYPE_ESP32_SOC)
 
@@ -114,6 +116,17 @@ static const struct MemmapEntry {
 #define ESP32_SOC_RESET_RTC       0x8
 #define ESP32_SOC_RESET_ALL       (ESP32_SOC_RESET_RTC | ESP32_SOC_RESET_DIG)
 
+#define TYPE_ESP32_MYUNIMP     "esp32.myunimp"
+
+
+typedef struct Esp32UnimpState {
+    SysBusDevice parent_obj;
+
+    BlockBackend *flash_blk;
+    MemoryRegion iomem;
+    qemu_irq irq;
+} Esp32UnimpState;
+
 
 typedef struct Esp32S2SocState {
     /*< private >*/
@@ -131,6 +144,7 @@ typedef struct Esp32S2SocState {
     Esp32SpiState spi[ESP32_SPI_COUNT];
     Esp32ShaState sha;
     Esp32EfuseState efuse;
+    Esp32UnimpState myunimp;
     DeviceState *eth;
 
     MemoryRegion cpu_specific_mem[ESP32_CPU_COUNT];
@@ -263,7 +277,7 @@ static void esp32_soc_add_unimp_device(MemoryRegion *dest, const char* name, hwa
 {
     create_unimplemented_device(name, dport_base_addr, size);
     char * name_apb = g_strdup_printf("%s-apb", name);
-    create_unimplemented_device(name_apb, dport_base_addr - DR_REG_UART_BASE /*DR_REG_DPORT_APB_BASE*/ + APB_REG_BASE, size);
+    create_unimplemented_device(name_apb, dport_base_addr - DR_REG_UART_BASE + APB_REG_BASE, size);
     g_free(name_apb);
 }
 
@@ -341,8 +355,8 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     }
 
     object_property_set_bool(OBJECT(&s->dport), true, "realized", &error_abort);
-
-    memory_region_add_subregion(sys_mem, DR_REG_SYSTEM_BASE,
+// DR_REG_SYSTEM_BASE
+    memory_region_add_subregion(sys_mem,0x3F4C1000 /*DR_REG_SYSTEM_BASE*/,
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dport), 0));
     //qdev_connect_gpio_out_named(DEVICE(&s->dport), ESP32_DPORT_APPCPU_RESET_GPIO, 0,
     //                            qdev_get_gpio_in_named(dev, ESP32_RTC_CPU_RESET_GPIO, 1));
@@ -431,8 +445,8 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
 
 
     esp32_soc_add_unimp_device(sys_mem, "esp32.extmem", DR_REG_EXTMEM_BASE, 0x1000);
-
-    //esp32_soc_add_unimp_device(sys_mem, "esp32.analog", DR_REG_ANA_BASE, 0x1000);
+//  0x6000E044
+    esp32_soc_add_unimp_device(sys_mem, "esp32.analog", 0x6000E000, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.rtcio", DR_REG_RTCIO_BASE, 0x400);
     esp32_soc_add_unimp_device(sys_mem, "esp32.rtcio", DR_REG_SENS_BASE, 0x400);
     esp32_soc_add_unimp_device(sys_mem, "esp32.iomux", DR_REG_IO_MUX_BASE, 0x2000);
@@ -444,6 +458,27 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     //esp32_soc_add_unimp_device(sys_mem, "esp32.i2s1", DR_REG_I2S1_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2c0", DR_REG_I2C_EXT_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2c1", DR_REG_I2C1_EXT_BASE, 0x1000);
+    esp32_soc_add_unimp_device(sys_mem, "esp32.usb", DR_REG_USB_BASE, 0x1000);
+    esp32_soc_add_unimp_device(sys_mem, "esp32.rndreg", 0x60035000, 0x1000);
+
+    
+
+    //esp32_soc_add_unimp_device(sys_mem, "esp32.unknown", 0x61801000, 0x1000);
+
+    object_property_set_bool(OBJECT(&s->myunimp), true, "realized", &error_abort);
+    esp32_soc_add_periph_device(sys_mem, &s->myunimp, 0x61800000);
+
+/*
+$2 = 0x61800040
+(gdb) p/x $a9
+$3 = 0x0
+(gdb) ni
+0x400181fa in Cache_Invalidate_ICache_Items ()
+(gdb) p/x $a3
+$4 = 0x200
+*/
+    
+
 
     qemu_register_reset((QEMUResetHandler*) esp32_soc_reset, dev);
 }
@@ -495,6 +530,12 @@ static void esp32s2_soc_init(Object *obj)
     object_initialize_child(obj, "rtc_cntl", &s->rtc_cntl, sizeof(s->rtc_cntl),
                             TYPE_ESP32_RTC_CNTL, &error_abort, NULL);
 
+
+    object_initialize_child(obj, "myunimp", &s->myunimp, sizeof(s->myunimp),
+                                TYPE_ESP32_MYUNIMP, &error_abort, NULL);
+
+
+
     for (int i = 0; i < ESP32_FRC_COUNT; ++i) {
         snprintf(name, sizeof(name), "frc%d", i);
         object_initialize_child(obj, name, &s->frc_timer[i], sizeof(s->frc_timer[i]),
@@ -545,6 +586,38 @@ static void esp32s2_soc_init(Object *obj)
         error_report("unable to load ROM image '%s'\n", rom_filename);
         exit(EXIT_FAILURE);
     }
+/*
+ static const uint8_t patch_ret[] = {
+                 0x06,0x05,0x00,  // Jump
+                 0x3d,0xf0,   // NOP
+                 0x3d,0xf0,   // NOP
+                 0x3d,0xf0,   // NOP
+                 0x3d,0xf0,   // NOP
+                 0x3d,0xf0,   // NOP
+                 0x3d,0xf0,   // NOP 
+                 0x3d,0xf0,   // NOP 
+                 0x3d,0xf0,   // NOP 
+                 0x3d,0xf0,   // NOP 
+                 0x3d,0xf0,   // NOP 
+                 0xff,        // To get next instruction correctly
+                 0x91, 0xfc, 0xff, 0x81 , 0xfc , 0xff , 0x99, 0x08 , 0xc, 0x2, 0x1d, 0xf0
+            };
+
+
+//MemTxResult address_space_write_rom(AddressSpace *as, hwaddr addr,
+//                                    MemTxAttrs attrs,
+//                                    const uint8_t *buf, hwaddr len);
+
+            CPUState* cst = CPU(&s->cpu[0]);
+            dump_mmu(&s->cpu[0]);
+
+            
+            // Patch rom, ets_unpack_flash_code
+             
+            //AddressSpace *as=cpu_get_address_space(cst , 1);
+
+            //address_space_write_rom(as,0x40010f58,MEMTXATTRS_UNSPECIFIED, patch_ret, sizeof(patch_ret));
+*/
 
 
 }
@@ -619,7 +692,248 @@ static void esp32_machine_init_openeth(Esp32S2SocState *ss)
         memory_region_add_subregion(sys_mem, desc_base, sysbus_mmio_get_region(sbd, 1));
     }
 }
+/**************/
 
+#define ESP32_UNIMP(obj) OBJECT_CHECK(Esp32UnimpState, (obj), TYPE_ESP32_MYUNIMP)
+
+
+
+#define ESP32_UNIMP_VAL 0x0a 
+
+static uint64_t esp32_unimp_read(void *opaque, hwaddr addr, unsigned int size)
+{
+    //Esp32UnimpState *s = ESP32_UNIMP(opaque);
+    printf("unimp read  %08X\n",(unsigned int)addr);
+
+    uint64_t r = 0;
+    switch (addr) {
+    case 0x40:
+       r=0x80000;
+       break;
+    case 0x44:
+    case 0x114:
+    case 0x60:
+        r = 0x200;
+        break;
+
+    default:
+        break;
+    }
+    return r;
+}
+
+//#define SOC_DROM_LOW 0x3f000000
+/* Use first 63 blocks in MMU for bootloader_mmap,
+   63th block for bootloader_flash_read
+*/
+#define MMU_BLOCK0_VADDR  SOC_DROM_LOW
+#define MMU_SIZE          (0x3f0000)
+#define MMU_BLOCK63_VADDR (MMU_BLOCK0_VADDR + MMU_SIZE)
+#define FLASH_READ_VADDR MMU_BLOCK63_VADDR
+
+#define MMU_FREE_PAGES    (MMU_SIZE / FLASH_BLOCK_SIZE)
+
+#if 0
+                    
+/**
+ * @brief Set ICache mmu mapping.
+ *        Please do not call this function in your SDK application.
+ *
+ * @param  uint32_t ext_ram : DPORT_MMU_ACCESS_FLASH for flash,
+ DPORT_MMU_ACCESS_SPIRAM for spiram, DPORT_MMU_INVALID for invalid.
+    *
+    * @param  uint32_t vaddr : virtual address in CPU address space.
+    *                              Can be Iram0,Iram1,Irom0,Drom0 and AHB buses
+address.
+    *                              Should be aligned by psize.
+    *
+    * @param  uint32_t paddr : physical address in external memory.
+    *                              Should be aligned by psize.
+    *
+    * @param  uint32_t psize : page size of ICache, in kilobytes. Should be 64
+here.
+    *
+    * @param  uint32_t num : pages to be set.
+    *
+    * @param  uint32_t fixed : 0 for physical pages grow with virtual pages,
+other for virtual pages map to same physical page.
+    *
+    * @return uint32_t: error status
+    *                   0 : mmu set success
+    *                   2 : vaddr or paddr is not aligned
+    *                   3 : psize error
+    *                   4 : vaddr is out of range
+    */ 
+
+uint Cache_Ibus_MMU_Set(uint ext_ram,uint vaddr,uint paddr,uint psize,uint num,int fixed)
+{
+  uint uVar1;
+  uint uVar2;
+  uint *puVar3;
+  uint uVar4;
+  int iVar5;
+  uint uVar6;
+  
+  uVar1 = 2;
+  if (((0xffff >> ((char)(0x40 / psize) - 1U & 0x1f) & (vaddr | paddr)) == 0) &&
+     (uVar1 = 3, psize == 0x40)) {
+    do {
+      if (num == 0) {
+        return 0;
+      }
+      uVar4 = vaddr + 0x400000 & 0xffc00000;
+      iVar5 = uVar4 - vaddr;
+      uVar6 = iVar5 >> 0x10;
+      if (num <= uVar6) {
+        uVar6 = num;
+      }
+      if (vaddr + 0xc1000000 < 0x400000) {
+        uVar2 = (vaddr >> 0x10 & 0x3f) + 0x80;
+      }
+      else {
+        if (vaddr + 0xc0000000 < 0x400000) {
+          uVar2 = vaddr >> 0x10 & 0x3f;
+        }
+        else {
+          if (0x3fffff < vaddr + 0xbfc00000) {
+            return 4;
+          }
+          uVar2 = (vaddr >> 0x10 & 0x3f) + 0x40;
+        }
+      }
+      puVar3 = (uint *)(&DAT_61801000 + uVar2 * 4);
+      uVar2 = 0;
+      while (uVar2 != uVar6) {
+        if (fixed == 0) {
+          *puVar3 = uVar2 + (paddr >> 0x10) | ext_ram;
+        }
+        else {
+          *puVar3 = paddr >> 0x10 | ext_ram;
+        }
+        uVar2 = uVar2 + 1;
+        puVar3 = puVar3 + 1;
+      }
+      num = num - uVar2;
+      vaddr = uVar4;
+      if (fixed == 0) {
+        paddr = paddr + iVar5;
+      }
+    } while( true );
+  }
+  return uVar1;
+}
+
+// The fun stops at verify_image_header()
+
+read RTC_CNTL_RESET_STATE_REG
+unimp write  000012FC,00008001
+MMU Map flash 00000001 to 3F3F0000
+FFFFFFFF,FFFFFFFF,b D8100204,p 00020150
+unimp read  00000040
+unimp write  00000040,00080001
+[0;31mE (2525) esp_image: image at 0x10000 has invalid magic byte[0m
+[0;33mW (2526) esp_image: image at 0x10000 has invalid SPI mode 255[0m
+[0;33mW (2528) esp_image: image at 0x10000 has invalid SPI size 15[0m
+[0;31mE (2530) boot: Factory app partition is not bootable[0m
+
+
+#endif
+
+
+
+
+static void esp32_unimp_write(void *opaque, hwaddr addr,
+                       uint64_t value, unsigned int size)
+{
+    Esp32UnimpState *s = ESP32_UNIMP(opaque);
+    //printf("unimp write  %08X,%08X\n",(unsigned int)addr,(unsigned int)value);
+    if (value!=0x4000) printf("unimp write  %08X,%08X\n",(unsigned int)addr,(unsigned int)value);
+
+    switch (addr) {
+        // 0x61801200
+        case 0x1200 ... 0x1400: 
+        {
+            // /sizeof(uint32_t)
+            //uint32_t mmu_entry = value;
+            //uint8_t* cache_data = (uint8_t*) memory_region_get_ram_ptr(&crs->mem);
+            char tmp_flash_cache[ESP32_CACHE_PAGE_SIZE];
+            // 0x3f008000
+
+           // (const esp_partition_info_t *) 0x3f008000
+            uint32_t phys_addr = 0x3f000000 + ((addr-0x1200)/4) * ESP32_CACHE_PAGE_SIZE;
+            uint32_t flash_addr =(value & 0x7FFF) << 16;
+            //uint32_t* cache_page = (uint32_t*) (cache_data + i * ESP32_CACHE_PAGE_SIZE);
+
+            if ((value & 0x8000) == 0x8000) {
+                printf("MMU Map flash %08X to %08X\n",flash_addr,phys_addr);
+                blk_pread(s->flash_blk, flash_addr, /*cache_page*/tmp_flash_cache, ESP32_CACHE_PAGE_SIZE);
+                printf("%08X,%08X,b %08X,p %08X\n",*(uint32_t *)tmp_flash_cache,*(uint32_t *)&tmp_flash_cache[4],*(uint32_t *)&tmp_flash_cache[0x1000],*(uint32_t *)&tmp_flash_cache[0x8000]);
+                cpu_physical_memory_write(phys_addr, tmp_flash_cache, ESP32_CACHE_PAGE_SIZE );
+            }
+        }
+    }
+
+}
+
+static const MemoryRegionOps unimp_ops = {
+    .read =  esp32_unimp_read,
+    .write = esp32_unimp_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static void esp32_unimp_reset(DeviceState *dev)
+{
+}
+
+static void esp32_unimp_realize(DeviceState *dev, Error **errp)
+{
+}
+
+
+
+static void esp32_unimp_init(Object *obj)
+{
+    Esp32UnimpState *s = ESP32_UNIMP(obj);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+
+    memory_region_init_io(&s->iomem, obj, &unimp_ops, s,
+                          TYPE_ESP32_MYUNIMP, 0x2000);
+    sysbus_init_mmio(sbd, &s->iomem);
+    sysbus_init_irq(sbd, &s->irq);
+}
+
+static Property esp32_gpio_properties[] = {
+    DEFINE_PROP_DRIVE("flash", Esp32DportState, flash_blk),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void esp32_unimp_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->reset = esp32_unimp_reset;
+    dc->realize = esp32_unimp_realize;
+    dc->props = esp32_gpio_properties;
+}
+
+static const TypeInfo esp32_gpio_info = {
+    .name = TYPE_ESP32_MYUNIMP,
+    .parent = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(Esp32UnimpState),
+    .instance_init = esp32_unimp_init,
+    .class_init = esp32_unimp_class_init
+};
+
+static void esp32_gpio_register_types(void)
+{
+    type_register_static(&esp32_gpio_info);
+}
+
+type_init(esp32_gpio_register_types)
+
+
+
+/*************/
 
 static void esp32_machine_inst_init(MachineState *machine)
 {
@@ -641,6 +955,9 @@ static void esp32_machine_inst_init(MachineState *machine)
 
     qemu_log("Done\n");
 
+    if (blk) {
+        s->myunimp.flash_blk = blk;
+    }
 
     if (blk) {
         s->dport.flash_blk = blk;
