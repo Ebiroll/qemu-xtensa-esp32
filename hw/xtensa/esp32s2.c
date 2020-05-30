@@ -123,6 +123,7 @@ typedef struct Esp32UnimpState {
     SysBusDevice parent_obj;
 
     BlockBackend *flash_blk;
+    uint32_t mmu_table[0x1000];
     MemoryRegion iomem;
     qemu_irq irq;
 } Esp32UnimpState;
@@ -588,23 +589,6 @@ static void esp32s2_soc_init(Object *obj)
         exit(EXIT_FAILURE);
     }
 /*
- static const uint8_t patch_ret[] = {
-                 0x06,0x05,0x00,  // Jump
-                 0x3d,0xf0,   // NOP
-                 0x3d,0xf0,   // NOP
-                 0x3d,0xf0,   // NOP
-                 0x3d,0xf0,   // NOP
-                 0x3d,0xf0,   // NOP
-                 0x3d,0xf0,   // NOP 
-                 0x3d,0xf0,   // NOP 
-                 0x3d,0xf0,   // NOP 
-                 0x3d,0xf0,   // NOP 
-                 0x3d,0xf0,   // NOP 
-                 0xff,        // To get next instruction correctly
-                 0x91, 0xfc, 0xff, 0x81 , 0xfc , 0xff , 0x99, 0x08 , 0xc, 0x2, 0x1d, 0xf0
-            };
-
-
 //MemTxResult address_space_write_rom(AddressSpace *as, hwaddr addr,
 //                                    MemTxAttrs attrs,
 //                                    const uint8_t *buf, hwaddr len);
@@ -701,7 +685,7 @@ static void esp32_machine_init_openeth(Esp32S2SocState *ss)
 
 static uint64_t esp32_unimp_read(void *opaque, hwaddr addr, unsigned int size)
 {
-    //Esp32UnimpState *s = ESP32_UNIMP(opaque);
+    Esp32UnimpState *s = ESP32_UNIMP(opaque);
     //printf("unimp read  %08X\n",(unsigned int)addr);
 
     uint64_t r = 0;
@@ -714,6 +698,12 @@ static uint64_t esp32_unimp_read(void *opaque, hwaddr addr, unsigned int size)
     case 0x60:
         r = 0x200;
         break;
+
+    case 0x1200 ... 0x1400: 
+    {
+        r=s->mmu_table[addr-0x1200];
+    }
+    break;
 
     default:
         break;
@@ -844,6 +834,7 @@ static void esp32_unimp_write(void *opaque, hwaddr addr,
         // 0x61801200
         case 0x1200 ... 0x1400: 
         {
+            s->mmu_table[addr-0x1200]=value;
             // /sizeof(uint32_t)
             //uint32_t mmu_entry = value;
             //uint8_t* cache_data = (uint8_t*) memory_region_get_ram_ptr(&crs->mem);
@@ -856,6 +847,7 @@ static void esp32_unimp_write(void *opaque, hwaddr addr,
             //uint32_t* cache_page = (uint32_t*) (cache_data + i * ESP32_CACHE_PAGE_SIZE);
 
             if ((value & 0x8000) == 0x8000) {
+                printf("unimp write  %08X,%08X\n",(unsigned int)addr,(unsigned int)value);
                 printf("MMU Map flash %08X to %08X\n",flash_addr,phys_addr);
                 blk_pread(s->flash_blk, flash_addr, /*cache_page*/tmp_flash_cache, ESP32_CACHE_PAGE_SIZE);
                 printf("%08X,%08X,b %08X,p %08X\n",*(uint32_t *)tmp_flash_cache,*(uint32_t *)&tmp_flash_cache[4],*(uint32_t *)&tmp_flash_cache[0x1000],*(uint32_t *)&tmp_flash_cache[0x8000]);
