@@ -433,8 +433,9 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
                            qdev_get_gpio_in(intmatrix_dev, ETS_SPI0_INTR_SOURCE + i));
     }
 
-    //object_property_set_bool(OBJECT(&s->rng), true, "realized", &error_abort);
-    //esp32_soc_add_periph_device(sys_mem, &s->rng, ESP32_RNG_BASE);
+//OLAS random
+    object_property_set_bool(OBJECT(&s->rng), true, "realized", &error_abort);
+    esp32_soc_add_periph_device(sys_mem, &s->rng, 0x60035110);
 
     object_property_set_bool(OBJECT(&s->efuse), true, "realized", &error_abort);
     esp32_soc_add_periph_device(sys_mem, &s->efuse, DR_REG_EFUSE_BASE);
@@ -459,7 +460,7 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2c0", DR_REG_I2C_EXT_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.i2c1", DR_REG_I2C1_EXT_BASE, 0x1000);
     esp32_soc_add_unimp_device(sys_mem, "esp32.usb", DR_REG_USB_BASE, 0x1000);
-    esp32_soc_add_unimp_device(sys_mem, "esp32.rndreg", 0x60035000, 0x1000);
+    //esp32_soc_add_unimp_device(sys_mem, "esp32.rndreg", 0x60035000, 0x1000);
 
     
 
@@ -696,14 +697,12 @@ static void esp32_machine_init_openeth(Esp32S2SocState *ss)
 
 #define ESP32_UNIMP(obj) OBJECT_CHECK(Esp32UnimpState, (obj), TYPE_ESP32_MYUNIMP)
 
-
-
 #define ESP32_UNIMP_VAL 0x0a 
 
 static uint64_t esp32_unimp_read(void *opaque, hwaddr addr, unsigned int size)
 {
     //Esp32UnimpState *s = ESP32_UNIMP(opaque);
-    printf("unimp read  %08X\n",(unsigned int)addr);
+    //printf("unimp read  %08X\n",(unsigned int)addr);
 
     uint64_t r = 0;
     switch (addr) {
@@ -827,14 +826,6 @@ uint Cache_Ibus_MMU_Set(uint ext_ram,uint vaddr,uint paddr,uint psize,uint num,i
 
 read RTC_CNTL_RESET_STATE_REG
 unimp write  000012FC,00008001
-MMU Map flash 00000001 to 3F3F0000
-FFFFFFFF,FFFFFFFF,b D8100204,p 00020150
-unimp read  00000040
-unimp write  00000040,00080001
-[0;31mE (2525) esp_image: image at 0x10000 has invalid magic byte[0m
-[0;33mW (2526) esp_image: image at 0x10000 has invalid SPI mode 255[0m
-[0;33mW (2528) esp_image: image at 0x10000 has invalid SPI size 15[0m
-[0;31mE (2530) boot: Factory app partition is not bootable[0m
 
 
 #endif
@@ -847,7 +838,7 @@ static void esp32_unimp_write(void *opaque, hwaddr addr,
 {
     Esp32UnimpState *s = ESP32_UNIMP(opaque);
     //printf("unimp write  %08X,%08X\n",(unsigned int)addr,(unsigned int)value);
-    if (value!=0x4000) printf("unimp write  %08X,%08X\n",(unsigned int)addr,(unsigned int)value);
+    //if (value!=0x4000) printf("unimp write  %08X,%08X\n",(unsigned int)addr,(unsigned int)value);
 
     switch (addr) {
         // 0x61801200
