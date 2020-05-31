@@ -212,7 +212,7 @@ static int uart_can_receive(void *opaque)
     return fifo8_num_free(&s->rx_fifo);
 }
 
-static void uart_event(void *opaque, int event)
+static void uart_event(void *opaque, QEMUChrEvent event)
 {
     /* TODO: handle UART break */
 }
@@ -289,7 +289,7 @@ static void esp32_uart_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_uart_reset;
     dc->realize = esp32_uart_realize;
-    dc->props = esp32_uart_properties;
+    device_class_set_props(dc, esp32_uart_properties);
 }
 
 static const TypeInfo esp32_uart_info = {

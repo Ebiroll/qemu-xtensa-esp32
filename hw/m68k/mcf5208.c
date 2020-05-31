@@ -9,7 +9,6 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu/error-report.h"
-#include "qemu/main-loop.h"
 #include "qapi/error.h"
 #include "qemu-common.h"
 #include "cpu.h"
@@ -79,6 +78,7 @@ static void m5208_timer_write(void *opaque, hwaddr offset,
             return;
         }
 
+        ptimer_transaction_begin(s->timer);
         if (s->pcsr & PCSR_EN)
             ptimer_stop(s->timer);
 
@@ -94,8 +94,10 @@ static void m5208_timer_write(void *opaque, hwaddr offset,
 
         if (s->pcsr & PCSR_EN)
             ptimer_run(s->timer, 0);
+        ptimer_transaction_commit(s->timer);
         break;
     case 2:
+        ptimer_transaction_begin(s->timer);
         s->pmr = value;
         s->pcsr &= ~PCSR_PIF;
         if ((s->pcsr & PCSR_RLD) == 0) {
@@ -104,6 +106,7 @@ static void m5208_timer_write(void *opaque, hwaddr offset,
         } else {
             ptimer_set_limit(s->timer, value, s->pcsr & PCSR_OVW);
         }
+        ptimer_transaction_commit(s->timer);
         break;
     case 4:
         break;
@@ -182,7 +185,6 @@ static void mcf5208_sys_init(MemoryRegion *address_space, qemu_irq *pic)
 {
     MemoryRegion *iomem = g_new(MemoryRegion, 1);
     m5208_timer_state *s;
-    QEMUBH *bh;
     int i;
 
     /* SDRAMC.  */
@@ -191,8 +193,7 @@ static void mcf5208_sys_init(MemoryRegion *address_space, qemu_irq *pic)
     /* Timers.  */
     for (i = 0; i < 2; i++) {
         s = g_new0(m5208_timer_state, 1);
-        bh = qemu_bh_new(m5208_timer_trigger, s);
-        s->timer = ptimer_init(bh, PTIMER_POLICY_DEFAULT);
+        s->timer = ptimer_init(m5208_timer_trigger, s, PTIMER_POLICY_DEFAULT);
         memory_region_init_io(&s->iomem, NULL, &m5208_timer_ops, s,
                               "m5208-timer", 0x00004000);
         memory_region_add_subregion(address_space, 0xfc080000 + 0x4000 * i,
@@ -233,7 +234,6 @@ static void mcf5208evb_init(MachineState *machine)
     qemu_irq *pic;
     MemoryRegion *address_space_mem = get_system_memory();
     MemoryRegion *rom = g_new(MemoryRegion, 1);
-    MemoryRegion *ram = g_new(MemoryRegion, 1);
     MemoryRegion *sram = g_new(MemoryRegion, 1);
 
     cpu = M68K_CPU(cpu_create(machine->cpu_type));
@@ -248,8 +248,7 @@ static void mcf5208evb_init(MachineState *machine)
     memory_region_add_subregion(address_space_mem, 0x00000000, rom);
 
     /* DRAM at 0x40000000 */
-    memory_region_allocate_system_memory(ram, NULL, "mcf5208.ram", ram_size);
-    memory_region_add_subregion(address_space_mem, 0x40000000, ram);
+    memory_region_add_subregion(address_space_mem, 0x40000000, machine->ram);
 
     /* Internal SRAM.  */
     memory_region_init_ram(sram, NULL, "mcf5208.sram", 16 * KiB, &error_fatal);
@@ -328,7 +327,7 @@ static void mcf5208evb_init(MachineState *machine)
     }
 
     kernel_size = load_elf(kernel_filename, NULL, NULL, NULL, &elf_entry,
-                           NULL, NULL, 1, EM_68K, 0, 0);
+                           NULL, NULL, NULL, 1, EM_68K, 0, 0);
     entry = elf_entry;
     if (kernel_size < 0) {
         kernel_size = load_uimage(kernel_filename, &entry, NULL, NULL,
@@ -351,8 +350,9 @@ static void mcf5208evb_machine_init(MachineClass *mc)
 {
     mc->desc = "MCF5208EVB";
     mc->init = mcf5208evb_init;
-    mc->is_default = 1;
+    mc->is_default = true;
     mc->default_cpu_type = M68K_CPU_TYPE_NAME("m5208");
+    mc->default_ram_id = "mcf5208.ram";
 }
 
 DEFINE_MACHINE("mcf5208evb", mcf5208evb_machine_init)

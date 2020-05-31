@@ -48,7 +48,7 @@
 #include "hw/boards.h"
 #endif
 
-#include "tcg-op.h"
+#include "tcg/tcg-op.h"
 
 #if UINTPTR_MAX == UINT32_MAX
 # define ELF_CLASS  ELFCLASS32
@@ -736,6 +736,15 @@ void tcg_region_init(void)
 #endif
 }
 
+static void alloc_tcg_plugin_context(TCGContext *s)
+{
+#ifdef CONFIG_PLUGIN
+    s->plugin_tb = g_new0(struct qemu_plugin_tb, 1);
+    s->plugin_tb->insns =
+        g_ptr_array_new_with_free_func(qemu_plugin_insn_cleanup_fn);
+#endif
+}
+
 /*
  * All TCG threads except the parent (i.e. the one that called tcg_context_init
  * and registered the target's TCG globals) must register with this function
@@ -779,6 +788,10 @@ void tcg_register_thread(void)
     n = atomic_fetch_inc(&n_tcg_ctxs);
     g_assert(n < ms->smp.max_cpus);
     atomic_set(&tcg_ctxs[n], s);
+
+    if (n > 0) {
+        alloc_tcg_plugin_context(s);
+    }
 
     tcg_ctx = s;
     qemu_mutex_lock(&region.lock);
@@ -976,6 +989,8 @@ void tcg_context_init(TCGContext *s)
         indirect_reg_alloc_order[i] = tcg_target_reg_alloc_order[i];
     }
 
+    alloc_tcg_plugin_context(s);
+
     tcg_ctx = s;
     /*
      * In user-mode we simply share the init context among threads, since we
@@ -1070,7 +1085,7 @@ void tcg_prologue_init(TCGContext *s)
 
 #ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_OUT_ASM)) {
-        qemu_log_lock();
+        FILE *logfile = qemu_log_lock();
         qemu_log("PROLOGUE: [size=%zu]\n", prologue_size);
         if (s->data_gen_ptr) {
             size_t code_size = s->data_gen_ptr - buf0;
@@ -1095,7 +1110,7 @@ void tcg_prologue_init(TCGContext *s)
         }
         qemu_log("\n");
         qemu_log_flush();
-        qemu_log_unlock();
+        qemu_log_unlock(logfile);
     }
 #endif
 
@@ -1681,6 +1696,13 @@ void tcg_gen_callN(void *func, TCGTemp *ret, int nargs, TCGTemp **args)
     flags = info->flags;
     sizemask = info->sizemask;
 
+#ifdef CONFIG_PLUGIN
+    /* detect non-plugin helpers */
+    if (tcg_ctx->plugin_insn && unlikely(strncmp(info->name, "plugin_", 7))) {
+        tcg_ctx->plugin_insn->calls_helpers = true;
+    }
+#endif
+
 #if defined(__sparc__) && !defined(__arch64__) \
     && !defined(CONFIG_TCG_INTERPRETER)
     /* We have 64-bit values in one register, but need to pass as two
@@ -2092,9 +2114,17 @@ static void tcg_dump_ops(TCGContext *s, bool have_prefs)
         }
 
         if (have_prefs || op->life) {
-            for (; col < 40; ++col) {
-                putc(' ', qemu_logfile);
+
+            QemuLogFile *logfile;
+
+            rcu_read_lock();
+            logfile = atomic_rcu_read(&qemu_logfile);
+            if (logfile) {
+                for (; col < 40; ++col) {
+                    putc(' ', logfile->fd);
+                }
             }
+            rcu_read_unlock();
         }
 
         if (op->life) {
@@ -4019,11 +4049,11 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 #ifdef DEBUG_DISAS
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP)
                  && qemu_log_in_addr_range(tb->pc))) {
-        qemu_log_lock();
+        FILE *logfile = qemu_log_lock();
         qemu_log("OP:\n");
         tcg_dump_ops(s, false);
         qemu_log("\n");
-        qemu_log_unlock();
+        qemu_log_unlock(logfile);
     }
 #endif
 
@@ -4064,11 +4094,11 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 #ifdef DEBUG_DISAS
         if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP_IND)
                      && qemu_log_in_addr_range(tb->pc))) {
-            qemu_log_lock();
+            FILE *logfile = qemu_log_lock();
             qemu_log("OP before indirect lowering:\n");
             tcg_dump_ops(s, false);
             qemu_log("\n");
-            qemu_log_unlock();
+            qemu_log_unlock(logfile);
         }
 #endif
         /* Replace indirect temps with direct temps.  */
@@ -4085,11 +4115,11 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 #ifdef DEBUG_DISAS
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP_OPT)
                  && qemu_log_in_addr_range(tb->pc))) {
-        qemu_log_lock();
+        FILE *logfile = qemu_log_lock();
         qemu_log("OP after optimization and liveness analysis:\n");
         tcg_dump_ops(s, true);
         qemu_log("\n");
-        qemu_log_unlock();
+        qemu_log_unlock(logfile);
     }
 #endif
 

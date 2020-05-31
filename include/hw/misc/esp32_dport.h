@@ -4,6 +4,7 @@
 #include "hw/registerfields.h"
 #include "hw/sysbus.h"
 #include "hw/misc/esp32_reg.h"
+#include "hw/misc/esp32_crosscore_int.h"
 #include "sysemu/block-backend.h"
 #include "target/xtensa/cpu.h"
 #include "target/xtensa/cpu-qom.h"
@@ -26,15 +27,6 @@ typedef struct Esp32IntMatrixState {
 } Esp32IntMatrixState;
 
 
-#define TYPE_ESP32_CROSSCORE_INT "misc.esp32.crosscoreint"
-#define ESP32_CROSSCORE_INT(obj) OBJECT_CHECK(Esp32CrosscoreInt, (obj), TYPE_ESP32_CROSSCORE_INT)
-
-typedef struct Esp32CrosscoreInt {
-    SysBusDevice parent_obj;
-    MemoryRegion iomem;
-    qemu_irq irqs[ESP32_DPORT_CROSSCORE_INT_COUNT];
-} Esp32CrosscoreInt;
-
 
 #define TYPE_ESP32_DPORT "misc.esp32.dport"
 #define ESP32_DPORT(obj) OBJECT_CHECK(Esp32DportState, (obj), TYPE_ESP32_DPORT)
@@ -54,9 +46,12 @@ typedef enum Esp32CacheRegionType {
 typedef struct Esp32CacheRegionState {
     Esp32CacheState* cache;
     MemoryRegion mem;
+    MemoryRegion illegal_access_trap_mem;
     Esp32CacheRegionType type;
-    uint32_t enable_mask;
     hwaddr base;
+    uint32_t illegal_access_retval;
+    bool illegal_access_trap_en;
+    bool illegal_access_status;
     uint16_t mmu_table[ESP32_CACHE_PAGES_PER_REGION];
 } Esp32CacheRegionState;
 
@@ -91,7 +86,10 @@ typedef struct Esp32DportState {
     bool appcpu_clkgate_state;
     uint32_t appcpu_boot_addr;
     uint32_t cpuperiod_sel;
+    uint32_t cache_ill_trap_en_reg;
 } Esp32DportState;
+
+void esp32_dport_clear_ill_trap_state(Esp32DportState* s);
 
 #define ESP32_DPORT_APPCPU_STALL_GPIO   "appcpu-stall"
 #define ESP32_DPORT_APPCPU_RESET_GPIO   "appcpu-reset"
@@ -144,8 +142,40 @@ REG32(DPORT_APP_MAC_INTR_MAP, 0x218)
 
 REG32(DPORT_PRO_DCACHE_DBUG0, 0x3f0)
     FIELD(DPORT_PRO_DCACHE_DBUG0, CACHE_STATE, 7, 12)
+
+REG32(DPORT_PRO_DCACHE_DBUG3, 0x3FC)
+    FIELD(DPORT_PRO_DCACHE_DBUG3, IA_INT_OPPOSITE, 9, 1)
+    FIELD(DPORT_PRO_DCACHE_DBUG3, IA_INT_DRAM1, 10, 1)
+    FIELD(DPORT_PRO_DCACHE_DBUG3, IA_INT_IROM0, 11, 1)
+    FIELD(DPORT_PRO_DCACHE_DBUG3, IA_INT_IRAM1, 12, 1)
+    FIELD(DPORT_PRO_DCACHE_DBUG3, IA_INT_IRAM0, 13, 1)
+    FIELD(DPORT_PRO_DCACHE_DBUG3, IA_INT_DROM0, 14, 1)
+
 REG32(DPORT_APP_DCACHE_DBUG0, 0x418)
     FIELD(DPORT_APP_DCACHE_DBUG0, CACHE_STATE, 7, 12)
+
+REG32(DPORT_APP_DCACHE_DBUG3, 0x424)
+    FIELD(DPORT_APP_DCACHE_DBUG3, IA_INT_OPPOSITE, 9, 1)
+    FIELD(DPORT_APP_DCACHE_DBUG3, IA_INT_DRAM1, 10, 1)
+    FIELD(DPORT_APP_DCACHE_DBUG3, IA_INT_IROM0, 11, 1)
+    FIELD(DPORT_APP_DCACHE_DBUG3, IA_INT_IRAM1, 12, 1)
+    FIELD(DPORT_APP_DCACHE_DBUG3, IA_INT_IRAM0, 13, 1)
+    FIELD(DPORT_APP_DCACHE_DBUG3, IA_INT_DROM0, 14, 1)
+
+REG32(DPORT_CACHE_IA_INT_EN, 0x5A0)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_PRO_OPPOSITE, 19, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_PRO_DRAM1, 18, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_PRO_IROM0, 17, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_PRO_IRAM1, 16, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_PRO_IRAM0, 15, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_PRO_DROM0, 14, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_APP_OPPOSITE, 5, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_APP_DRAM1, 4, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_APP_IROM0, 3, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_APP_IRAM1, 2, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_APP_IRAM0, 1, 1)
+    FIELD(DPORT_CACHE_IA_INT_EN, IA_INT_APP_DROM0, 0, 1)
+
 
 #define ESP32_DPORT_PRO_INTMATRIX_BASE    A_DPORT_PRO_MAC_INTR_MAP
 #define ESP32_DPORT_APP_INTMATRIX_BASE    A_DPORT_APP_MAC_INTR_MAP

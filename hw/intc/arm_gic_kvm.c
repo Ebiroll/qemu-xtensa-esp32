@@ -55,7 +55,7 @@ void kvm_arm_gic_set_irq(uint32_t num_irq, int irq, int level)
      * has separate fields in the irq number for type,
      * CPU number and interrupt number.
      */
-    int kvm_irq, irqtype, cpu;
+    int irqtype, cpu;
 
     if (irq < (num_irq - GIC_INTERNAL)) {
         /* External interrupt. The kernel numbers these like the GIC
@@ -72,10 +72,7 @@ void kvm_arm_gic_set_irq(uint32_t num_irq, int irq, int level)
         cpu = irq / GIC_INTERNAL;
         irq %= GIC_INTERNAL;
     }
-    kvm_irq = (irqtype << KVM_ARM_IRQ_TYPE_SHIFT)
-        | (cpu << KVM_ARM_IRQ_VCPU_SHIFT) | irq;
-
-    kvm_set_irq(kvm_state, kvm_irq, !!level);
+    kvm_arm_set_irq(cpu, irqtype, irq, !!level);
 }
 
 static void kvm_arm_gicv2_set_irq(void *opaque, int irq, int level)
@@ -554,7 +551,16 @@ static void kvm_arm_gic_realize(DeviceState *dev, Error **errp)
                               KVM_DEV_ARM_VGIC_CTRL_INIT, NULL, true,
                               &error_abort);
         }
+    } else if (kvm_check_extension(kvm_state, KVM_CAP_DEVICE_CTRL)) {
+        error_setg_errno(errp, -ret, "error creating in-kernel VGIC");
+        error_append_hint(errp,
+                          "Perhaps the host CPU does not support GICv2?\n");
     } else if (ret != -ENODEV && ret != -ENOTSUP) {
+        /*
+         * Very ancient kernel without KVM_CAP_DEVICE_CTRL: assume that
+         * ENODEV or ENOTSUP mean "can't create GICv2 with KVM_CREATE_DEVICE",
+         * and that we will get a GICv2 via KVM_CREATE_IRQCHIP.
+         */
         error_setg_errno(errp, -ret, "error creating in-kernel VGIC");
         return;
     }

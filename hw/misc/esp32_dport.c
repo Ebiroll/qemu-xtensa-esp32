@@ -90,6 +90,19 @@ static uint64_t esp32_dport_read(void *opaque, hwaddr addr, unsigned int size)
         /* in idle state */
         r = FIELD_DP32(0, DPORT_PRO_DCACHE_DBUG0, CACHE_STATE, 1);
         break;
+    case A_DPORT_CACHE_IA_INT_EN:
+        r = s->cache_ill_trap_en_reg;
+        break;
+    case A_DPORT_PRO_DCACHE_DBUG3:
+        r = 0;
+        r = FIELD_DP32(r, DPORT_PRO_DCACHE_DBUG3, IA_INT_DROM0, s->cache_state[0].drom0.illegal_access_status);
+        r = FIELD_DP32(r, DPORT_PRO_DCACHE_DBUG3, IA_INT_IRAM0, s->cache_state[0].iram0.illegal_access_status);
+        break;
+    case A_DPORT_APP_DCACHE_DBUG3:
+        r = 0;
+        r = FIELD_DP32(r, DPORT_APP_DCACHE_DBUG3, IA_INT_DROM0, s->cache_state[1].drom0.illegal_access_status);
+        r = FIELD_DP32(r, DPORT_APP_DCACHE_DBUG3, IA_INT_IRAM0, s->cache_state[1].iram0.illegal_access_status);
+        break;
     case PRO_DROM0_MMU_FIRST ... PRO_DROM0_MMU_LAST:
         r = get_mmu_entry(&s->cache_state[0].drom0, PRO_DROM0_MMU_FIRST, addr);
         break;
@@ -176,6 +189,13 @@ static void esp32_dport_write(void *opaque, hwaddr addr,
             esp32_cache_state_update(&s->cache_state[1]);
         }
         break;
+    case A_DPORT_CACHE_IA_INT_EN:
+        s->cache_ill_trap_en_reg = value;
+        s->cache_state[0].drom0.illegal_access_trap_en = (FIELD_EX32(value, DPORT_CACHE_IA_INT_EN, IA_INT_PRO_DROM0));
+        s->cache_state[0].iram0.illegal_access_trap_en = (FIELD_EX32(value, DPORT_CACHE_IA_INT_EN, IA_INT_PRO_IRAM0));
+        s->cache_state[1].drom0.illegal_access_trap_en = (FIELD_EX32(value, DPORT_CACHE_IA_INT_EN, IA_INT_APP_DROM0));
+        s->cache_state[1].iram0.illegal_access_trap_en = (FIELD_EX32(value, DPORT_CACHE_IA_INT_EN, IA_INT_APP_IRAM0));
+        break;
     case PRO_DROM0_MMU_FIRST ... PRO_DROM0_MMU_LAST:
         set_mmu_entry(&s->cache_state[0].drom0, PRO_DROM0_MMU_FIRST, addr, value);
         break;
@@ -199,6 +219,10 @@ static const MemoryRegionOps esp32_dport_ops = {
 
 static void esp32_cache_data_sync(Esp32CacheRegionState* crs)
 {
+    if (crs->cache->dport->flash_blk == NULL) {
+        return;
+    }
+
     uint8_t* cache_data = (uint8_t*) memory_region_get_ram_ptr(&crs->mem);
     int n = 0;
     for (int i = 0; i < ESP32_CACHE_PAGES_PER_REGION; ++i) {
@@ -247,6 +271,7 @@ static void esp32_cache_region_reset(Esp32CacheRegionState *crs)
     for (int i = 0; i < ESP32_CACHE_PAGES_PER_REGION; ++i) {
         crs->mmu_table[i] = ESP32_CACHE_MMU_ENTRY_CHANGED;
     }
+    crs->illegal_access_trap_en = false;
 }
 
 static void esp32_cache_reset(Esp32CacheState *cs)
@@ -255,11 +280,39 @@ static void esp32_cache_reset(Esp32CacheState *cs)
     esp32_cache_region_reset(&cs->iram0);
 }
 
+static uint64_t esp32_cache_ill_read(void *opaque, hwaddr addr, unsigned int size)
+{
+    Esp32CacheRegionState *crs = (Esp32CacheRegionState*) opaque;
+    uint32_t ill_data[] = { crs->illegal_access_retval, crs->illegal_access_retval };
+    uint32_t result;
+    memcpy(&result, ((uint8_t*) ill_data) + (addr % 4), size);
+    if (crs->illegal_access_trap_en) {
+        crs->illegal_access_status = true;
+        qemu_irq cache_ill_irq = qdev_get_gpio_in(DEVICE(&crs->cache->dport->intmatrix), ETS_CACHE_IA_INTR_SOURCE);
+        qemu_irq_raise(cache_ill_irq);
+    }
+    return result;
+}
+
+void esp32_dport_clear_ill_trap_state(Esp32DportState* s)
+{
+    s->cache_state[0].drom0.illegal_access_status = false;
+    s->cache_state[0].drom0.illegal_access_status = false;
+    s->cache_state[1].iram0.illegal_access_status = false;
+    s->cache_state[1].iram0.illegal_access_status = false;
+    qemu_irq cache_ill_irq = qdev_get_gpio_in(DEVICE(&s->intmatrix), ETS_CACHE_IA_INTR_SOURCE);
+    qemu_irq_lower(cache_ill_irq);
+}
+
 static const MemoryRegionOps esp32_cache_ops = {
     .write = NULL,
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+
+static const MemoryRegionOps esp32_cache_ill_trap_ops = {
+    .read = esp32_cache_ill_read,
+};
 
 static void esp32_dport_reset(DeviceState *dev)
 {
@@ -269,8 +322,11 @@ static void esp32_dport_reset(DeviceState *dev)
     s->appcpu_clkgate_state = false;
     s->appcpu_reset_state = true;
     s->appcpu_stall_state = false;
+    s->cache_ill_trap_en_reg = 0;
     esp32_cache_reset(&s->cache_state[0]);
     esp32_cache_reset(&s->cache_state[1]);
+    device_cold_reset(DEVICE(&s->intmatrix));
+    qemu_irq_lower(s->appcpu_stall_req);
 }
 
 static void esp32_dport_realize(DeviceState *dev, Error **errp)
@@ -287,9 +343,12 @@ static void esp32_dport_realize(DeviceState *dev, Error **errp)
     }
     object_property_set_bool(OBJECT(&s->intmatrix), true, "realized", &error_abort);
 
+    int n_crosscore_irqs = ESP32_DPORT_CROSSCORE_INT_COUNT;
+    object_property_set_int(OBJECT(&s->crosscore_int), n_crosscore_irqs, "n_irqs", &error_abort);
     object_property_set_bool(OBJECT(&s->crosscore_int), true, "realized", &error_abort);
+    memory_region_add_subregion_overlap(&s->iomem, ESP32_DPORT_CROSSCORE_INT_BASE, &s->crosscore_int.iomem, -1);
 
-    for (int index = 0; index < ESP32_DPORT_CROSSCORE_INT_COUNT; ++index) {
+    for (int index = 0; index < n_crosscore_irqs; ++index) {
         qemu_irq target = qdev_get_gpio_in(DEVICE(&s->intmatrix), ETS_FROM_CPU_INTR0_SOURCE + index);
         assert(target);
         sysbus_connect_irq(SYS_BUS_DEVICE(&s->crosscore_int), index, target);
@@ -299,17 +358,23 @@ static void esp32_dport_realize(DeviceState *dev, Error **errp)
 static void esp32_cache_init_region(Esp32CacheState *cs,
                                     Esp32CacheRegionState *crs,
                                     Esp32CacheRegionType type,
-                                    uint32_t enable_mask,
-                                    const char* name, hwaddr base)
+                                    const char* name, hwaddr base,
+                                    uint32_t illegal_access_retval)
 {
     char desc[16];
     crs->cache = cs;
     crs->type = type;
     crs->base = base;
+    crs->illegal_access_retval = illegal_access_retval;
     snprintf(desc, sizeof(desc), "cpu%d-%s", cs->core_id, name);
     memory_region_init_rom_device(&crs->mem, OBJECT(cs->dport),
                                   &esp32_cache_ops, crs,
                                   desc, ESP32_CACHE_REGION_SIZE, &error_abort);
+
+    snprintf(desc, sizeof(desc), "cpu%d-%s-ill", cs->core_id, name);
+    memory_region_init_io(&crs->illegal_access_trap_mem, OBJECT(cs->dport),
+                          &esp32_cache_ill_trap_ops, crs,
+                          desc, ESP32_CACHE_REGION_SIZE);
 }
 
 static void esp32_dport_init(Object *obj)
@@ -326,17 +391,16 @@ static void esp32_dport_init(Object *obj)
 
     object_initialize_child(obj, "crosscore_int", &s->crosscore_int, sizeof(s->crosscore_int), TYPE_ESP32_CROSSCORE_INT,
                             &error_abort, NULL);
-    memory_region_add_subregion_overlap(&s->iomem, ESP32_DPORT_CROSSCORE_INT_BASE, &s->crosscore_int.iomem, -1);
-
+    /* memory_region_add_subregion_overlap is called from esp32_dport_realize, since crosscore_int doesn't know its iomem size yet */
 
     for (int i = 0; i < ESP32_CPU_COUNT; ++i) {
         Esp32CacheState* cs = &s->cache_state[i];
         cs->core_id = i;
         cs->dport = s;
-        esp32_cache_init_region(cs, &cs->drom0, ESP32_DCACHE,
-                                R_DPORT_PRO_CACHE_CTRL1_MASK_DROM0_MASK, "drom0", 0x3F400000);
-        esp32_cache_init_region(cs, &cs->iram0, ESP32_ICACHE,
-                                R_DPORT_PRO_CACHE_CTRL1_MASK_IRAM0_MASK, "iram0", 0x40000000);
+        esp32_cache_init_region(cs, &cs->drom0, ESP32_DCACHE, "drom0",
+                                0x3F400000, 0xbaadbaad);
+        esp32_cache_init_region(cs, &cs->iram0, ESP32_ICACHE, "iram0",
+                                0x40000000, 0x00000000);
     }
 
     qdev_init_gpio_out_named(DEVICE(sbd), &s->appcpu_stall_req, ESP32_DPORT_APPCPU_STALL_GPIO, 1);
@@ -355,7 +419,7 @@ static void esp32_dport_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_dport_reset;
     dc->realize = esp32_dport_realize;
-    dc->props = esp32_dport_properties;
+    device_class_set_props(dc, esp32_dport_properties);
 }
 
 static const TypeInfo esp32_dport_info = {

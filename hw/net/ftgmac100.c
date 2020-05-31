@@ -15,6 +15,7 @@
 #include "hw/irq.h"
 #include "hw/net/ftgmac100.h"
 #include "sysemu/dma.h"
+#include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "net/checksum.h"
@@ -196,6 +197,8 @@ typedef struct {
     uint32_t        des2;        /* not used by HW */
     uint32_t        des3;
 } FTGMAC100Desc;
+
+#define FTGMAC100_DESC_ALIGNMENT 16
 
 /*
  * Specific RTL8211E MII Registers
@@ -559,18 +562,18 @@ static void ftgmac100_do_tx(FTGMAC100State *s, uint32_t tx_ring,
     ftgmac100_update_irq(s);
 }
 
-static int ftgmac100_can_receive(NetClientState *nc)
+static bool ftgmac100_can_receive(NetClientState *nc)
 {
     FTGMAC100State *s = FTGMAC100(qemu_get_nic_opaque(nc));
     FTGMAC100Desc bd;
 
     if ((s->maccr & (FTGMAC100_MACCR_RXDMA_EN | FTGMAC100_MACCR_RXMAC_EN))
          != (FTGMAC100_MACCR_RXDMA_EN | FTGMAC100_MACCR_RXMAC_EN)) {
-        return 0;
+        return false;
     }
 
     if (ftgmac100_read_bd(&bd, s->rx_descriptor)) {
-        return 0;
+        return false;
     }
     return !(bd.des0 & FTGMAC100_RXDES0_RXPKT_RDY);
 }
@@ -721,6 +724,12 @@ static void ftgmac100_write(void *opaque, hwaddr addr,
         s->itc = value;
         break;
     case FTGMAC100_RXR_BADR: /* Ring buffer address */
+        if (!QEMU_IS_ALIGNED(value, FTGMAC100_DESC_ALIGNMENT)) {
+            qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad RX buffer alignment 0x%"
+                          HWADDR_PRIx "\n", __func__, value);
+            return;
+        }
+
         s->rx_ring = value;
         s->rx_descriptor = s->rx_ring;
         break;
@@ -730,6 +739,11 @@ static void ftgmac100_write(void *opaque, hwaddr addr,
         break;
 
     case FTGMAC100_NPTXR_BADR: /* Transmit buffer address */
+        if (!QEMU_IS_ALIGNED(value, FTGMAC100_DESC_ALIGNMENT)) {
+            qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad TX buffer alignment 0x%"
+                          HWADDR_PRIx "\n", __func__, value);
+            return;
+        }
         s->tx_ring = value;
         s->tx_descriptor = s->tx_ring;
         break;
@@ -1074,7 +1088,7 @@ static void ftgmac100_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_ftgmac100;
     dc->reset = ftgmac100_reset;
-    dc->props = ftgmac100_properties;
+    device_class_set_props(dc, ftgmac100_properties);
     set_bit(DEVICE_CATEGORY_NETWORK, dc->categories);
     dc->realize = ftgmac100_realize;
     dc->desc = "Faraday FTGMAC100 Gigabit Ethernet emulation";
@@ -1087,9 +1101,169 @@ static const TypeInfo ftgmac100_info = {
     .class_init = ftgmac100_class_init,
 };
 
+/*
+ * AST2600 MII controller
+ */
+#define ASPEED_MII_PHYCR_FIRE        BIT(31)
+#define ASPEED_MII_PHYCR_ST_22       BIT(28)
+#define ASPEED_MII_PHYCR_OP(x)       ((x) & (ASPEED_MII_PHYCR_OP_WRITE | \
+                                             ASPEED_MII_PHYCR_OP_READ))
+#define ASPEED_MII_PHYCR_OP_WRITE    BIT(26)
+#define ASPEED_MII_PHYCR_OP_READ     BIT(27)
+#define ASPEED_MII_PHYCR_DATA(x)     (x & 0xffff)
+#define ASPEED_MII_PHYCR_PHY(x)      (((x) >> 21) & 0x1f)
+#define ASPEED_MII_PHYCR_REG(x)      (((x) >> 16) & 0x1f)
+
+#define ASPEED_MII_PHYDATA_IDLE      BIT(16)
+
+static void aspeed_mii_transition(AspeedMiiState *s, bool fire)
+{
+    if (fire) {
+        s->phycr |= ASPEED_MII_PHYCR_FIRE;
+        s->phydata &= ~ASPEED_MII_PHYDATA_IDLE;
+    } else {
+        s->phycr &= ~ASPEED_MII_PHYCR_FIRE;
+        s->phydata |= ASPEED_MII_PHYDATA_IDLE;
+    }
+}
+
+static void aspeed_mii_do_phy_ctl(AspeedMiiState *s)
+{
+    uint8_t reg;
+    uint16_t data;
+
+    if (!(s->phycr & ASPEED_MII_PHYCR_ST_22)) {
+        aspeed_mii_transition(s, !ASPEED_MII_PHYCR_FIRE);
+        qemu_log_mask(LOG_UNIMP, "%s: unsupported ST code\n", __func__);
+        return;
+    }
+
+    /* Nothing to do */
+    if (!(s->phycr & ASPEED_MII_PHYCR_FIRE)) {
+        return;
+    }
+
+    reg = ASPEED_MII_PHYCR_REG(s->phycr);
+    data = ASPEED_MII_PHYCR_DATA(s->phycr);
+
+    switch (ASPEED_MII_PHYCR_OP(s->phycr)) {
+    case ASPEED_MII_PHYCR_OP_WRITE:
+        do_phy_write(s->nic, reg, data);
+        break;
+    case ASPEED_MII_PHYCR_OP_READ:
+        s->phydata = (s->phydata & ~0xffff) | do_phy_read(s->nic, reg);
+        break;
+    default:
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid OP code %08x\n",
+                      __func__, s->phycr);
+    }
+
+    aspeed_mii_transition(s, !ASPEED_MII_PHYCR_FIRE);
+}
+
+static uint64_t aspeed_mii_read(void *opaque, hwaddr addr, unsigned size)
+{
+    AspeedMiiState *s = ASPEED_MII(opaque);
+
+    switch (addr) {
+    case 0x0:
+        return s->phycr;
+    case 0x4:
+        return s->phydata;
+    default:
+        g_assert_not_reached();
+    }
+}
+
+static void aspeed_mii_write(void *opaque, hwaddr addr,
+                             uint64_t value, unsigned size)
+{
+    AspeedMiiState *s = ASPEED_MII(opaque);
+
+    switch (addr) {
+    case 0x0:
+        s->phycr = value & ~(s->phycr & ASPEED_MII_PHYCR_FIRE);
+        break;
+    case 0x4:
+        s->phydata = value & ~(0xffff | ASPEED_MII_PHYDATA_IDLE);
+        break;
+    default:
+        g_assert_not_reached();
+    }
+
+    aspeed_mii_transition(s, !!(s->phycr & ASPEED_MII_PHYCR_FIRE));
+    aspeed_mii_do_phy_ctl(s);
+}
+
+static const MemoryRegionOps aspeed_mii_ops = {
+    .read = aspeed_mii_read,
+    .write = aspeed_mii_write,
+    .valid.min_access_size = 4,
+    .valid.max_access_size = 4,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static void aspeed_mii_reset(DeviceState *dev)
+{
+    AspeedMiiState *s = ASPEED_MII(dev);
+
+    s->phycr = 0;
+    s->phydata = 0;
+
+    aspeed_mii_transition(s, !!(s->phycr & ASPEED_MII_PHYCR_FIRE));
+};
+
+static void aspeed_mii_realize(DeviceState *dev, Error **errp)
+{
+    AspeedMiiState *s = ASPEED_MII(dev);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+
+    assert(s->nic);
+
+    memory_region_init_io(&s->iomem, OBJECT(dev), &aspeed_mii_ops, s,
+                          TYPE_ASPEED_MII, 0x8);
+    sysbus_init_mmio(sbd, &s->iomem);
+}
+
+static const VMStateDescription vmstate_aspeed_mii = {
+    .name = TYPE_ASPEED_MII,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(phycr, FTGMAC100State),
+        VMSTATE_UINT32(phydata, FTGMAC100State),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static Property aspeed_mii_properties[] = {
+    DEFINE_PROP_LINK("nic", AspeedMiiState, nic, TYPE_FTGMAC100,
+                     FTGMAC100State *),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void aspeed_mii_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->vmsd = &vmstate_aspeed_mii;
+    dc->reset = aspeed_mii_reset;
+    dc->realize = aspeed_mii_realize;
+    dc->desc = "Aspeed MII controller";
+    device_class_set_props(dc, aspeed_mii_properties);
+}
+
+static const TypeInfo aspeed_mii_info = {
+    .name = TYPE_ASPEED_MII,
+    .parent = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(AspeedMiiState),
+    .class_init = aspeed_mii_class_init,
+};
+
 static void ftgmac100_register_types(void)
 {
     type_register_static(&ftgmac100_info);
+    type_register_static(&aspeed_mii_info);
 }
 
 type_init(ftgmac100_register_types)

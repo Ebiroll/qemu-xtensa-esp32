@@ -33,6 +33,7 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
+#include "sysemu/replay.h"
 
 #define NOT_DONE 0x7fffffff /* used while emulated sync operation in progress */
 
@@ -159,7 +160,7 @@ void bdrv_refresh_limits(BlockDriverState *bs, Error **errp)
         bdrv_merge_limits(&bs->bl, &bs->file->bs->bl);
     } else {
         bs->bl.min_mem_alignment = 512;
-        bs->bl.opt_mem_alignment = getpagesize();
+        bs->bl.opt_mem_alignment = qemu_real_host_page_size;
 
         /* Safe default since most protocols use readv()/writev()/etc */
         bs->bl.max_iov = IOV_MAX;
@@ -368,8 +369,8 @@ static void coroutine_fn bdrv_co_yield_to_drain(BlockDriverState *bs,
     if (bs) {
         bdrv_inc_in_flight(bs);
     }
-    aio_bh_schedule_oneshot(bdrv_get_aio_context(bs),
-                            bdrv_co_drain_bh_cb, &data);
+    replay_bh_schedule_oneshot_event(bdrv_get_aio_context(bs),
+                                     bdrv_co_drain_bh_cb, &data);
 
     qemu_coroutine_yield();
     /* If we are resumed from some other event (such as an aio completion or a
@@ -600,6 +601,15 @@ void bdrv_drain_all_begin(void)
         return;
     }
 
+    /*
+     * bdrv queue is managed by record/replay,
+     * waiting for finishing the I/O requests may
+     * be infinite
+     */
+    if (replay_events_enabled()) {
+        return;
+    }
+
     /* AIO_WAIT_WHILE() with a NULL context can only be called from the main
      * loop AioContext, so make sure we're in the main context. */
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
@@ -628,6 +638,15 @@ void bdrv_drain_all_end(void)
 {
     BlockDriverState *bs = NULL;
     int drained_end_counter = 0;
+
+    /*
+     * bdrv queue is managed by record/replay,
+     * waiting for finishing the I/O requests may
+     * be endless
+     */
+    if (replay_events_enabled()) {
+        return;
+    }
 
     while ((bs = bdrv_next_all_states(bs))) {
         AioContext *aio_context = bdrv_get_aio_context(bs);
@@ -696,12 +715,69 @@ static void tracked_request_begin(BdrvTrackedRequest *req,
     qemu_co_mutex_unlock(&bs->reqs_lock);
 }
 
-static void mark_request_serialising(BdrvTrackedRequest *req, uint64_t align)
+static bool tracked_request_overlaps(BdrvTrackedRequest *req,
+                                     int64_t offset, uint64_t bytes)
 {
+    /*        aaaa   bbbb */
+    if (offset >= req->overlap_offset + req->overlap_bytes) {
+        return false;
+    }
+    /* bbbb   aaaa        */
+    if (req->overlap_offset >= offset + bytes) {
+        return false;
+    }
+    return true;
+}
+
+static bool coroutine_fn
+bdrv_wait_serialising_requests_locked(BlockDriverState *bs,
+                                      BdrvTrackedRequest *self)
+{
+    BdrvTrackedRequest *req;
+    bool retry;
+    bool waited = false;
+
+    do {
+        retry = false;
+        QLIST_FOREACH(req, &bs->tracked_requests, list) {
+            if (req == self || (!req->serialising && !self->serialising)) {
+                continue;
+            }
+            if (tracked_request_overlaps(req, self->overlap_offset,
+                                         self->overlap_bytes))
+            {
+                /* Hitting this means there was a reentrant request, for
+                 * example, a block driver issuing nested requests.  This must
+                 * never happen since it means deadlock.
+                 */
+                assert(qemu_coroutine_self() != req->co);
+
+                /* If the request is already (indirectly) waiting for us, or
+                 * will wait for us as soon as it wakes up, then just go on
+                 * (instead of producing a deadlock in the former case). */
+                if (!req->waiting_for) {
+                    self->waiting_for = req;
+                    qemu_co_queue_wait(&req->wait_queue, &bs->reqs_lock);
+                    self->waiting_for = NULL;
+                    retry = true;
+                    waited = true;
+                    break;
+                }
+            }
+        }
+    } while (retry);
+    return waited;
+}
+
+bool bdrv_mark_request_serialising(BdrvTrackedRequest *req, uint64_t align)
+{
+    BlockDriverState *bs = req->bs;
     int64_t overlap_offset = req->offset & ~(align - 1);
     uint64_t overlap_bytes = ROUND_UP(req->offset + req->bytes, align)
                                - overlap_offset;
+    bool waited;
 
+    qemu_co_mutex_lock(&bs->reqs_lock);
     if (!req->serialising) {
         atomic_inc(&req->bs->serialising_in_flight);
         req->serialising = true;
@@ -709,18 +785,27 @@ static void mark_request_serialising(BdrvTrackedRequest *req, uint64_t align)
 
     req->overlap_offset = MIN(req->overlap_offset, overlap_offset);
     req->overlap_bytes = MAX(req->overlap_bytes, overlap_bytes);
+    waited = bdrv_wait_serialising_requests_locked(bs, req);
+    qemu_co_mutex_unlock(&bs->reqs_lock);
+    return waited;
 }
 
-static bool is_request_serialising_and_aligned(BdrvTrackedRequest *req)
+/**
+ * Return the tracked request on @bs for the current coroutine, or
+ * NULL if there is none.
+ */
+BdrvTrackedRequest *coroutine_fn bdrv_co_get_self_request(BlockDriverState *bs)
 {
-    /*
-     * If the request is serialising, overlap_offset and overlap_bytes are set,
-     * so we can check if the request is aligned. Otherwise, don't care and
-     * return false.
-     */
+    BdrvTrackedRequest *req;
+    Coroutine *self = qemu_coroutine_self();
 
-    return req->serialising && (req->offset == req->overlap_offset) &&
-           (req->bytes == req->overlap_bytes);
+    QLIST_FOREACH(req, &bs->tracked_requests, list) {
+        if (req->co == self) {
+            return req;
+        }
+    }
+
+    return NULL;
 }
 
 /**
@@ -756,20 +841,6 @@ static int bdrv_get_cluster_size(BlockDriverState *bs)
     }
 }
 
-static bool tracked_request_overlaps(BdrvTrackedRequest *req,
-                                     int64_t offset, uint64_t bytes)
-{
-    /*        aaaa   bbbb */
-    if (offset >= req->overlap_offset + req->overlap_bytes) {
-        return false;
-    }
-    /* bbbb   aaaa        */
-    if (req->overlap_offset >= offset + bytes) {
-        return false;
-    }
-    return true;
-}
-
 void bdrv_inc_in_flight(BlockDriverState *bs)
 {
     atomic_inc(&bs->in_flight);
@@ -786,48 +857,18 @@ void bdrv_dec_in_flight(BlockDriverState *bs)
     bdrv_wakeup(bs);
 }
 
-static bool coroutine_fn wait_serialising_requests(BdrvTrackedRequest *self)
+static bool coroutine_fn bdrv_wait_serialising_requests(BdrvTrackedRequest *self)
 {
     BlockDriverState *bs = self->bs;
-    BdrvTrackedRequest *req;
-    bool retry;
     bool waited = false;
 
     if (!atomic_read(&bs->serialising_in_flight)) {
         return false;
     }
 
-    do {
-        retry = false;
-        qemu_co_mutex_lock(&bs->reqs_lock);
-        QLIST_FOREACH(req, &bs->tracked_requests, list) {
-            if (req == self || (!req->serialising && !self->serialising)) {
-                continue;
-            }
-            if (tracked_request_overlaps(req, self->overlap_offset,
-                                         self->overlap_bytes))
-            {
-                /* Hitting this means there was a reentrant request, for
-                 * example, a block driver issuing nested requests.  This must
-                 * never happen since it means deadlock.
-                 */
-                assert(qemu_coroutine_self() != req->co);
-
-                /* If the request is already (indirectly) waiting for us, or
-                 * will wait for us as soon as it wakes up, then just go on
-                 * (instead of producing a deadlock in the former case). */
-                if (!req->waiting_for) {
-                    self->waiting_for = req;
-                    qemu_co_queue_wait(&req->wait_queue, &bs->reqs_lock);
-                    self->waiting_for = NULL;
-                    retry = true;
-                    waited = true;
-                    break;
-                }
-            }
-        }
-        qemu_co_mutex_unlock(&bs->reqs_lock);
-    } while (retry);
+    qemu_co_mutex_lock(&bs->reqs_lock);
+    waited = bdrv_wait_serialising_requests_locked(bs, self);
+    qemu_co_mutex_unlock(&bs->reqs_lock);
 
     return waited;
 }
@@ -1358,7 +1399,7 @@ static int coroutine_fn bdrv_co_do_copy_on_readv(BdrvChild *child,
             if (!(flags & BDRV_REQ_PREFETCH)) {
                 qemu_iovec_from_buf(qiov, qiov_offset + progress,
                                     bounce_buffer + skip_bytes,
-                                    pnum - skip_bytes);
+                                    MIN(pnum - skip_bytes, bytes - progress));
             }
         } else if (!(flags & BDRV_REQ_PREFETCH)) {
             /* Read directly into the destination */
@@ -1408,8 +1449,7 @@ static int coroutine_fn bdrv_aligned_preadv(BdrvChild *child,
      * potential fallback support, if we ever implement any read flags
      * to pass through to drivers.  For now, there aren't any
      * passthrough flags.  */
-    assert(!(flags & ~(BDRV_REQ_NO_SERIALISING | BDRV_REQ_COPY_ON_READ |
-                       BDRV_REQ_PREFETCH)));
+    assert(!(flags & ~(BDRV_REQ_COPY_ON_READ | BDRV_REQ_PREFETCH)));
 
     /* Handle Copy on Read and associated serialisation */
     if (flags & BDRV_REQ_COPY_ON_READ) {
@@ -1418,14 +1458,9 @@ static int coroutine_fn bdrv_aligned_preadv(BdrvChild *child,
          * with each other for the same cluster.  For example, in copy-on-read
          * it ensures that the CoR read and write operations are atomic and
          * guest writes cannot interleave between them. */
-        mark_request_serialising(req, bdrv_get_cluster_size(bs));
-    }
-
-    /* BDRV_REQ_SERIALISING is only for write operation */
-    assert(!(flags & BDRV_REQ_SERIALISING));
-
-    if (!(flags & BDRV_REQ_NO_SERIALISING)) {
-        wait_serialising_requests(req);
+        bdrv_mark_request_serialising(req, bdrv_get_cluster_size(bs));
+    } else {
+        bdrv_wait_serialising_requests(req);
     }
 
     if (flags & BDRV_REQ_COPY_ON_READ) {
@@ -1530,9 +1565,11 @@ static bool bdrv_init_padding(BlockDriverState *bs,
         pad->tail = align - pad->tail;
     }
 
-    if ((!pad->head && !pad->tail) || !bytes) {
+    if (!pad->head && !pad->tail) {
         return false;
     }
+
+    assert(bytes); /* Nothing good in aligning zero-length requests */
 
     sum = pad->head + bytes + pad->tail;
     pad->buf_len = (sum > align && pad->head && pad->tail) ? 2 * align : align;
@@ -1671,10 +1708,22 @@ int coroutine_fn bdrv_co_preadv_part(BdrvChild *child,
         return ret;
     }
 
+    if (bytes == 0 && !QEMU_IS_ALIGNED(offset, bs->bl.request_alignment)) {
+        /*
+         * Aligning zero request is nonsense. Even if driver has special meaning
+         * of zero-length (like qcow2_co_pwritev_compressed_part), we can't pass
+         * it to driver due to request_alignment.
+         *
+         * Still, no reason to return an error if someone do unaligned
+         * zero-length read occasionally.
+         */
+        return 0;
+    }
+
     bdrv_inc_in_flight(bs);
 
     /* Don't do copy-on-read if we read data before write operation */
-    if (atomic_read(&bs->copy_on_read) && !(flags & BDRV_REQ_NO_SERIALISING)) {
+    if (atomic_read(&bs->copy_on_read)) {
         flags |= BDRV_REQ_COPY_ON_READ;
     }
 
@@ -1815,20 +1864,24 @@ bdrv_co_write_req_prepare(BdrvChild *child, int64_t offset, uint64_t bytes,
         return -EPERM;
     }
 
-    /* BDRV_REQ_NO_SERIALISING is only for read operation */
-    assert(!(flags & BDRV_REQ_NO_SERIALISING));
     assert(!(bs->open_flags & BDRV_O_INACTIVE));
     assert((bs->open_flags & BDRV_O_NO_IO) == 0);
     assert(!(flags & ~BDRV_REQ_MASK));
 
     if (flags & BDRV_REQ_SERIALISING) {
-        mark_request_serialising(req, bdrv_get_cluster_size(bs));
+        waited = bdrv_mark_request_serialising(req, bdrv_get_cluster_size(bs));
+        /*
+         * For a misaligned request we should have already waited earlier,
+         * because we come after bdrv_padding_rmw_read which must be called
+         * with the request already marked as serialising.
+         */
+        assert(!waited ||
+               (req->offset == req->overlap_offset &&
+                req->bytes == req->overlap_bytes));
+    } else {
+        bdrv_wait_serialising_requests(req);
     }
 
-    waited = wait_serialising_requests(req);
-
-    assert(!waited || !req->serialising ||
-           is_request_serialising_and_aligned(req));
     assert(req->overlap_offset <= offset);
     assert(offset + bytes <= req->overlap_offset + req->overlap_bytes);
     assert(end_sector <= bs->total_sectors || child->perm & BLK_PERM_RESIZE);
@@ -1989,8 +2042,7 @@ static int coroutine_fn bdrv_co_do_zero_pwritev(BdrvChild *child,
 
     padding = bdrv_init_padding(bs, offset, bytes, &pad);
     if (padding) {
-        mark_request_serialising(req, align);
-        wait_serialising_requests(req);
+        bdrv_mark_request_serialising(req, align);
 
         bdrv_padding_rmw_read(child, req, &pad, true);
 
@@ -2071,6 +2123,25 @@ int coroutine_fn bdrv_co_pwritev_part(BdrvChild *child,
         return ret;
     }
 
+    /* If the request is misaligned then we can't make it efficient */
+    if ((flags & BDRV_REQ_NO_FALLBACK) &&
+        !QEMU_IS_ALIGNED(offset | bytes, align))
+    {
+        return -ENOTSUP;
+    }
+
+    if (bytes == 0 && !QEMU_IS_ALIGNED(offset, bs->bl.request_alignment)) {
+        /*
+         * Aligning zero request is nonsense. Even if driver has special meaning
+         * of zero-length (like qcow2_co_pwritev_compressed_part), we can't pass
+         * it to driver due to request_alignment.
+         *
+         * Still, no reason to return an error if someone do unaligned
+         * zero-length write occasionally.
+         */
+        return 0;
+    }
+
     bdrv_inc_in_flight(bs);
     /*
      * Align write if necessary by performing a read-modify-write cycle.
@@ -2085,8 +2156,7 @@ int coroutine_fn bdrv_co_pwritev_part(BdrvChild *child,
     }
 
     if (bdrv_pad_request(bs, &qiov, &qiov_offset, &offset, &bytes, &pad)) {
-        mark_request_serialising(&req, align);
-        wait_serialising_requests(&req);
+        bdrv_mark_request_serialising(&req, align);
         bdrv_padding_rmw_read(child, &req, &pad, false);
     }
 
@@ -2123,6 +2193,15 @@ int bdrv_flush_all(void)
     BdrvNextIterator it;
     BlockDriverState *bs = NULL;
     int result = 0;
+
+    /*
+     * bdrv queue is managed by record/replay,
+     * creating new flush request for stopping
+     * the VM may break the determinism
+     */
+    if (replay_events_enabled()) {
+        return result;
+    }
 
     for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
         AioContext *aio_context = bdrv_get_aio_context(bs);
@@ -3169,9 +3248,7 @@ static int coroutine_fn bdrv_co_copy_range_internal(
 
         /* BDRV_REQ_SERIALISING is only for write operation */
         assert(!(read_flags & BDRV_REQ_SERIALISING));
-        if (!(read_flags & BDRV_REQ_NO_SERIALISING)) {
-            wait_serialising_requests(&req);
-        }
+        bdrv_wait_serialising_requests(&req);
 
         ret = src->bs->drv->bdrv_co_copy_range_from(src->bs,
                                                     src, src_offset,
@@ -3256,8 +3333,12 @@ static void bdrv_parent_cb_resize(BlockDriverState *bs)
 
 /**
  * Truncate file to 'offset' bytes (needed only for file protocols)
+ *
+ * If 'exact' is true, the file must be resized to exactly the given
+ * 'offset'.  Otherwise, it is sufficient for the node to be at least
+ * 'offset' bytes in length.
  */
-int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
+int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset, bool exact,
                                   PreallocMode prealloc, Error **errp)
 {
     BlockDriverState *bs = child->bs;
@@ -3297,7 +3378,7 @@ int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
      * new area, we need to make sure that no write requests are made to it
      * concurrently or they might be overwritten by preallocation. */
     if (new_bytes) {
-        mark_request_serialising(&req, 1);
+        bdrv_mark_request_serialising(&req, 1);
     }
     if (bs->read_only) {
         error_setg(errp, "Image is read-only");
@@ -3312,20 +3393,19 @@ int coroutine_fn bdrv_co_truncate(BdrvChild *child, int64_t offset,
         goto out;
     }
 
-    if (!drv->bdrv_co_truncate) {
-        if (bs->file && drv->is_filter) {
-            ret = bdrv_co_truncate(bs->file, offset, prealloc, errp);
-            goto out;
-        }
+    if (drv->bdrv_co_truncate) {
+        ret = drv->bdrv_co_truncate(bs, offset, exact, prealloc, errp);
+    } else if (bs->file && drv->is_filter) {
+        ret = bdrv_co_truncate(bs->file, offset, exact, prealloc, errp);
+    } else {
         error_setg(errp, "Image format driver does not support resize");
         ret = -ENOTSUP;
         goto out;
     }
-
-    ret = drv->bdrv_co_truncate(bs, offset, prealloc, errp);
     if (ret < 0) {
         goto out;
     }
+
     ret = refresh_total_sectors(bs, offset >> BDRV_SECTOR_BITS);
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Could not refresh total sector count");
@@ -3347,6 +3427,7 @@ out:
 typedef struct TruncateCo {
     BdrvChild *child;
     int64_t offset;
+    bool exact;
     PreallocMode prealloc;
     Error **errp;
     int ret;
@@ -3355,18 +3436,19 @@ typedef struct TruncateCo {
 static void coroutine_fn bdrv_truncate_co_entry(void *opaque)
 {
     TruncateCo *tco = opaque;
-    tco->ret = bdrv_co_truncate(tco->child, tco->offset, tco->prealloc,
-                                tco->errp);
+    tco->ret = bdrv_co_truncate(tco->child, tco->offset, tco->exact,
+                                tco->prealloc, tco->errp);
     aio_wait_kick();
 }
 
-int bdrv_truncate(BdrvChild *child, int64_t offset, PreallocMode prealloc,
-                  Error **errp)
+int bdrv_truncate(BdrvChild *child, int64_t offset, bool exact,
+                  PreallocMode prealloc, Error **errp)
 {
     Coroutine *co;
     TruncateCo tco = {
         .child      = child,
         .offset     = offset,
+        .exact      = exact,
         .prealloc   = prealloc,
         .errp       = errp,
         .ret        = NOT_DONE,

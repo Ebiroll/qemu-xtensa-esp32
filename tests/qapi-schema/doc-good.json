@@ -53,10 +53,14 @@
 # @Enum:
 # @one: The _one_ {and only}
 #
+# Features:
+# @enum-feat: Also _one_ {and only}
+#
 # @two is undocumented
 ##
 { 'enum': 'Enum', 'data':
   [ { 'name': 'one', 'if': 'defined(IFONE)' }, 'two' ],
+  'features': [ 'enum-feat' ],
   'if': 'defined(IFCOND)' }
 
 ##
@@ -71,9 +75,16 @@
 # A paragraph
 #
 # Another paragraph (but no @var: line)
+#
+# Features:
+# @variant1-feat: a feature
+# @member-feat: a member feature
 ##
 { 'struct': 'Variant1',
-  'data': { 'var1': { 'type': 'str', 'if': 'defined(IFSTR)' } } }
+  'features': [ 'variant1-feat' ],
+  'data': { 'var1': { 'type': 'str',
+                      'features': [ 'member-feat' ],
+                      'if': 'defined(IFSTR)' } } }
 
 ##
 # @Variant2:
@@ -82,17 +93,35 @@
 
 ##
 # @Object:
+# Features:
+# @union-feat1: a feature
 ##
 { 'union': 'Object',
+  'features': [ 'union-feat1' ],
   'base': 'Base',
   'discriminator': 'base1',
   'data': { 'one': 'Variant1', 'two': { 'type': 'Variant2', 'if': 'IFTWO' } } }
 
 ##
 # @SugaredUnion:
+# Features:
+# @union-feat2: a feature
 ##
 { 'union': 'SugaredUnion',
+  'features': [ 'union-feat2' ],
   'data': { 'one': 'Variant1', 'two': { 'type': 'Variant2', 'if': 'IFTWO' } } }
+
+##
+# @Alternate:
+# @i: an integer
+# @b is undocumented
+#
+# Features:
+# @alt-feat: a feature
+##
+{ 'alternate': 'Alternate',
+  'features': [ 'alt-feat' ],
+  'data': { 'i': 'int', 'b': 'bool' } }
 
 ##
 # == Another subsection
@@ -104,6 +133,10 @@
 #
 # @arg2: the second
 # argument
+#
+# Features:
+# @cmd-feat1: a feature
+# @cmd-feat2: another feature
 # Note: @arg3 is undocumented
 # Returns: @Object
 # TODO: frobnicate
@@ -123,11 +156,15 @@
 ##
 { 'command': 'cmd',
   'data': { 'arg1': 'int', '*arg2': 'str', 'arg3': 'bool' },
-  'returns': 'Object' }
+  'returns': 'Object',
+  'features': [ 'cmd-feat1', 'cmd-feat2' ] }
 
 ##
 # @cmd-boxed:
 # If you're bored enough to read this, go see a video of boxed cats
+# Features:
+# @cmd-feat1: a feature
+# @cmd-feat2: another feature
 # Example:
 #
 # -> in
@@ -135,4 +172,14 @@
 # <- out
 ##
 { 'command': 'cmd-boxed', 'boxed': true,
+  'data': 'Object',
+  'features': [ 'cmd-feat1', 'cmd-feat2' ] }
+
+##
+# @EVT-BOXED:
+# Features:
+# @feat3: a feature
+##
+{ 'event': 'EVT-BOXED',  'boxed': true,
+  'features': [ 'feat3' ],
   'data': 'Object' }

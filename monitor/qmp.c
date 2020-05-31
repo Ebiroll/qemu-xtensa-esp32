@@ -27,7 +27,7 @@
 #include "chardev/char-io.h"
 #include "monitor-internal.h"
 #include "qapi/error.h"
-#include "qapi/qapi-commands-misc.h"
+#include "qapi/qapi-commands-control.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qjson.h"
 #include "qapi/qmp/qlist.h"
@@ -75,10 +75,35 @@ static void monitor_qmp_cleanup_req_queue_locked(MonitorQMP *mon)
     }
 }
 
-static void monitor_qmp_cleanup_queues(MonitorQMP *mon)
+static void monitor_qmp_cleanup_queue_and_resume(MonitorQMP *mon)
 {
     qemu_mutex_lock(&mon->qmp_queue_lock);
+
+    /*
+     * Same condition as in monitor_qmp_bh_dispatcher(), but before
+     * removing an element from the queue (hence no `- 1`).
+     * Also, the queue should not be empty either, otherwise the
+     * monitor hasn't been suspended yet (or was already resumed).
+     */
+    bool need_resume = (!qmp_oob_enabled(mon) ||
+        mon->qmp_requests->length == QMP_REQ_QUEUE_LEN_MAX)
+        && !g_queue_is_empty(mon->qmp_requests);
+
     monitor_qmp_cleanup_req_queue_locked(mon);
+
+    if (need_resume) {
+        /*
+         * handle_qmp_command() suspended the monitor because the
+         * request queue filled up, to be resumed when the queue has
+         * space again.  We just emptied it; resume the monitor.
+         *
+         * Without this, the monitor would remain suspended forever
+         * when we get here while the monitor is suspended.  An
+         * unfortunately timed CHR_EVENT_CLOSED can do the trick.
+         */
+        monitor_resume(&mon->common);
+    }
+
     qemu_mutex_unlock(&mon->qmp_queue_lock);
 }
 
@@ -263,9 +288,10 @@ static void handle_qmp_command(void *opaque, QObject *req, Error *err)
 
     /*
      * Suspend the monitor when we can't queue more requests after
-     * this one.  Dequeuing in monitor_qmp_bh_dispatcher() will resume
-     * it.  Note that when OOB is disabled, we queue at most one
-     * command, for backward compatibility.
+     * this one.  Dequeuing in monitor_qmp_bh_dispatcher() or
+     * monitor_qmp_cleanup_queue_and_resume() will resume it.
+     * Note that when OOB is disabled, we queue at most one command,
+     * for backward compatibility.
      */
     if (!qmp_oob_enabled(mon) ||
         mon->qmp_requests->length == QMP_REQ_QUEUE_LEN_MAX - 1) {
@@ -311,7 +337,7 @@ static QDict *qmp_greeting(MonitorQMP *mon)
         ver, cap_list);
 }
 
-static void monitor_qmp_event(void *opaque, int event)
+static void monitor_qmp_event(void *opaque, QEMUChrEvent event)
 {
     QDict *data;
     MonitorQMP *mon = opaque;
@@ -332,12 +358,17 @@ static void monitor_qmp_event(void *opaque, int event)
          * stdio, it's possible that stdout is still open when stdin
          * is closed.
          */
-        monitor_qmp_cleanup_queues(mon);
+        monitor_qmp_cleanup_queue_and_resume(mon);
         json_message_parser_destroy(&mon->parser);
         json_message_parser_init(&mon->parser, handle_qmp_command,
                                  mon, NULL);
         mon_refcount--;
         monitor_fdsets_cleanup();
+        break;
+    case CHR_EVENT_BREAK:
+    case CHR_EVENT_MUX_IN:
+    case CHR_EVENT_MUX_OUT:
+        /* Ignore */
         break;
     }
 }
@@ -364,9 +395,15 @@ static void monitor_qmp_setup_handlers_bh(void *opaque)
     monitor_list_append(&mon->common);
 }
 
-void monitor_init_qmp(Chardev *chr, bool pretty)
+void monitor_init_qmp(Chardev *chr, bool pretty, Error **errp)
 {
     MonitorQMP *mon = g_new0(MonitorQMP, 1);
+
+    if (!qemu_chr_fe_init(&mon->common.chr, chr, errp)) {
+        g_free(mon);
+        return;
+    }
+    qemu_chr_fe_set_echo(&mon->common.chr, true);
 
     /* Note: we run QMP monitor in I/O thread when @chr supports that */
     monitor_data_init(&mon->common, true, false,
@@ -376,9 +413,6 @@ void monitor_init_qmp(Chardev *chr, bool pretty)
 
     qemu_mutex_init(&mon->qmp_queue_lock);
     mon->qmp_requests = g_queue_new();
-
-    qemu_chr_fe_init(&mon->common.chr, chr, &error_abort);
-    qemu_chr_fe_set_echo(&mon->common.chr, true);
 
     json_message_parser_init(&mon->parser, handle_qmp_command, mon, NULL);
     if (mon->common.use_io_thread) {

@@ -18,6 +18,12 @@
 #define xtensa_modules xtensa_modules_esp32
 #include "core-esp32/xtensa-modules.inc.c"
 
+static const XtensaOpcodeTranslators* esp32_opcode_translators[] = {
+    &xtensa_core_opcodes,
+    &xtensa_fpu2000_opcodes,
+    NULL
+};
+
 static XtensaConfig xtensa_core_esp32 __attribute__((unused)) = {
     .name = "esp32",
     .gdb_regmap = {
@@ -27,6 +33,7 @@ static XtensaConfig xtensa_core_esp32 __attribute__((unused)) = {
     },
     .isa_internal = &xtensa_modules,
     .clock_freq_khz = 40000,
+    .opcode_translators = esp32_opcode_translators,
     DEFAULT_SECTIONS
 };
 

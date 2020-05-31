@@ -99,6 +99,7 @@ static uint64_t memory_device_get_free_addr(MachineState *ms,
                                             uint64_t align, uint64_t size,
                                             Error **errp)
 {
+    Error *err = NULL;
     GSList *list = NULL, *item;
     Range as, new = range_empty;
 
@@ -123,8 +124,9 @@ static uint64_t memory_device_get_free_addr(MachineState *ms,
         return 0;
     }
 
-    memory_device_check_addable(ms, size, errp);
-    if (*errp) {
+    memory_device_check_addable(ms, size, &err);
+    if (err) {
+        error_propagate(errp, err);
         return 0;
     }
 
@@ -179,13 +181,14 @@ static uint64_t memory_device_get_free_addr(MachineState *ms,
                 range_make_empty(&new);
                 break;
             }
+        } else if (range_lob(&tmp) > range_upb(&new)) {
+            break;
         }
     }
 
     if (!range_contains_range(&as, &new)) {
         error_setg(errp, "could not find position in guest address space for "
                    "memory device - memory fragmented due to alignments");
-        goto out;
     }
 out:
     g_slist_free(list);

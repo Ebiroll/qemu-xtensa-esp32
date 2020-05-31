@@ -225,7 +225,7 @@ static void esp32_rtc_cntl_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_rtc_cntl_reset;
     dc->realize = esp32_rtc_cntl_realize;
-    dc->props = esp32_rtc_cntl_properties;
+    device_class_set_props(dc, esp32_rtc_cntl_properties);
 }
 
 static const TypeInfo esp32_rtc_cntl_info = {

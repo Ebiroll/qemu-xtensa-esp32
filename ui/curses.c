@@ -54,13 +54,13 @@ enum maybe_keycode {
 };
 
 static DisplayChangeListener *dcl;
-static console_ch_t screen[160 * 100];
+static console_ch_t *screen;
 static WINDOW *screenpad = NULL;
 static int width, height, gwidth, gheight, invalidate;
 static int px, py, sminx, sminy, smaxx, smaxy;
 
 static const char *font_charset = "CP437";
-static cchar_t vga_to_curses[256];
+static cchar_t *vga_to_curses;
 
 static void curses_update(DisplayChangeListener *dcl,
                           int x, int y, int w, int h)
@@ -75,14 +75,16 @@ static void curses_update(DisplayChangeListener *dcl,
     line = screen + y * width;
     for (h += y; y < h; y ++, line += width) {
         for (x = 0; x < width; x++) {
-            chtype ch = line[x] & 0xff;
-            chtype at = line[x] & ~0xff;
+            chtype ch = line[x] & A_CHARTEXT;
+            chtype at = line[x] & A_ATTRIBUTES;
+            short color_pair = PAIR_NUMBER(line[x]);
+
             ret = getcchar(&vga_to_curses[ch], wch, &attrs, &colors, NULL);
             if (ret == ERR || wch[0] == 0) {
                 wch[0] = ch;
                 wch[1] = 0;
             }
-            setcchar(&curses_line[x], wch, at, 0, NULL);
+            setcchar(&curses_line[x], wch, at, color_pair, NULL);
         }
         mvwadd_wchnstr(screenpad, y, 0, curses_line, width);
     }
@@ -403,6 +405,8 @@ static void curses_refresh(DisplayChangeListener *dcl)
 static void curses_atexit(void)
 {
     endwin();
+    g_free(vga_to_curses);
+    g_free(screen);
 }
 
 /*
@@ -527,7 +531,7 @@ static void font_setup(void)
      * Control characters are normally non-printable, but VGA does have
      * well-known glyphs for them.
      */
-    static uint16_t control_characters[0x20] = {
+    static const uint16_t control_characters[0x20] = {
       0x0020,
       0x263a,
       0x263b,
@@ -781,6 +785,8 @@ static void curses_display_init(DisplayState *ds, DisplayOptions *opts)
     if (opts->u.curses.charset) {
         font_charset = opts->u.curses.charset;
     }
+    screen = g_new0(console_ch_t, 160 * 100);
+    vga_to_curses = g_new0(cchar_t, 256);
     curses_setup();
     curses_keyboard_setup();
     atexit(curses_atexit);

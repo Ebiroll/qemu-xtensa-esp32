@@ -4,7 +4,6 @@ source acpi/Kconfig
 source adc/Kconfig
 source audio/Kconfig
 source block/Kconfig
-source bt/Kconfig
 source char/Kconfig
 source core/Kconfig
 source display/Kconfig
@@ -21,12 +20,14 @@ source isa/Kconfig
 source mem/Kconfig
 source misc/Kconfig
 source net/Kconfig
+source nubus/Kconfig
 source nvram/Kconfig
 source pci-bridge/Kconfig
 source pci-host/Kconfig
 source pcmcia/Kconfig
 source pci/Kconfig
 source rdma/Kconfig
+source rtc/Kconfig
 source scsi/Kconfig
 source sd/Kconfig
 source semihosting/Kconfig

@@ -43,27 +43,6 @@ typedef struct CommitBlockJob {
     char *backing_file_str;
 } CommitBlockJob;
 
-static int coroutine_fn commit_populate(BlockBackend *bs, BlockBackend *base,
-                                        int64_t offset, uint64_t bytes,
-                                        void *buf)
-{
-    int ret = 0;
-
-    assert(bytes < SIZE_MAX);
-
-    ret = blk_co_pread(bs, offset, bytes, buf, 0);
-    if (ret < 0) {
-        return ret;
-    }
-
-    ret = blk_co_pwrite(base, offset, bytes, buf, 0);
-    if (ret < 0) {
-        return ret;
-    }
-
-    return 0;
-}
-
 static int commit_prepare(Job *job)
 {
     CommitBlockJob *s = container_of(job, CommitBlockJob, common.job);
@@ -140,7 +119,6 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
     int ret = 0;
     int64_t n = 0; /* bytes */
     void *buf = NULL;
-    int bytes_written = 0;
     int64_t len, base_len;
 
     ret = len = blk_getlength(s->top);
@@ -155,7 +133,7 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
     }
 
     if (base_len < len) {
-        ret = blk_truncate(s->base, len, PREALLOC_MODE_OFF, NULL);
+        ret = blk_truncate(s->base, len, false, PREALLOC_MODE_OFF, NULL);
         if (ret) {
             goto out;
         }
@@ -165,6 +143,7 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
 
     for (offset = 0; offset < len; offset += n) {
         bool copy;
+        bool error_in_source = true;
 
         /* Note that even when no rate limit is applied we need to yield
          * with no pending I/O here so that bdrv_drain_all() returns.
@@ -179,12 +158,20 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
         copy = (ret == 1);
         trace_commit_one_iteration(s, offset, n, ret);
         if (copy) {
-            ret = commit_populate(s->top, s->base, offset, n, buf);
-            bytes_written += n;
+            assert(n < SIZE_MAX);
+
+            ret = blk_co_pread(s->top, offset, n, buf, 0);
+            if (ret >= 0) {
+                ret = blk_co_pwrite(s->base, offset, n, buf, 0);
+                if (ret < 0) {
+                    error_in_source = false;
+                }
+            }
         }
         if (ret < 0) {
             BlockErrorAction action =
-                block_job_error_action(&s->common, false, s->on_error, -ret);
+                block_job_error_action(&s->common, s->on_error,
+                                       error_in_source, -ret);
             if (action == BLOCK_ERROR_ACTION_REPORT) {
                 goto out;
             } else {
@@ -471,7 +458,8 @@ int bdrv_commit(BlockDriverState *bs)
      * grow the backing file image if possible.  If not possible,
      * we must return an error */
     if (length > backing_length) {
-        ret = blk_truncate(backing, length, PREALLOC_MODE_OFF, &local_err);
+        ret = blk_truncate(backing, length, false, PREALLOC_MODE_OFF,
+                           &local_err);
         if (ret < 0) {
             error_report_err(local_err);
             goto ro_cleanup;

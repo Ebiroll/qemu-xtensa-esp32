@@ -22,7 +22,7 @@
 
 /* Current version of the replay mechanism.
    Increase it when file format changes. */
-#define REPLAY_VERSION              0xe02008
+#define REPLAY_VERSION              0xe02009
 /* Size of replay log header */
 #define HEADER_SIZE                 (sizeof(uint32_t) + sizeof(uint64_t))
 
@@ -384,6 +384,8 @@ void replay_finish(void)
 
     g_free(replay_snapshot);
     replay_snapshot = NULL;
+
+    replay_mode = REPLAY_MODE_NONE;
 
     replay_finish_events();
 }

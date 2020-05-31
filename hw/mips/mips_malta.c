@@ -26,9 +26,8 @@
 #include "qemu/units.h"
 #include "qemu-common.h"
 #include "cpu.h"
-#include "hw/i386/pc.h"
+#include "hw/southbridge/piix.h"
 #include "hw/isa/superio.h"
-#include "hw/dma/i8257.h"
 #include "hw/char/serial.h"
 #include "net/net.h"
 #include "hw/boards.h"
@@ -45,8 +44,6 @@
 #include "hw/irq.h"
 #include "hw/loader.h"
 #include "elf.h"
-#include "hw/timer/mc146818rtc.h"
-#include "hw/timer/i8254.h"
 #include "exec/address-spaces.h"
 #include "hw/sysbus.h"             /* SysBusDevice */
 #include "qemu/host-utils.h"
@@ -86,7 +83,7 @@ typedef struct {
     uint32_t i2csel;
     CharBackend display;
     char display_text[9];
-    SerialState *uart;
+    SerialMM *uart;
     bool display_inited;
 } MaltaFPGAState;
 
@@ -97,10 +94,8 @@ typedef struct {
     SysBusDevice parent_obj;
 
     MIPSCPSState cps;
-    qemu_irq *i8259;
+    qemu_irq i8259[ISA_NUM_IRQS];
 } MaltaState;
-
-static ISADevice *pit;
 
 static struct _loaderparams {
     int ram_size, ram_low_size;
@@ -142,7 +137,8 @@ static void malta_fpga_update_display(void *opaque)
  */
 
 #if defined(DEBUG)
-#  define logout(fmt, ...) fprintf(stderr, "MALTA\t%-24s" fmt, __func__, ## __VA_ARGS__)
+#  define logout(fmt, ...) \
+          fprintf(stderr, "MALTA\t%-24s" fmt, __func__, ## __VA_ARGS__)
 #else
 #  define logout(fmt, ...) ((void)0)
 #endif
@@ -364,7 +360,6 @@ static uint64_t malta_fpga_read(void *opaque, hwaddr addr,
 
     /* SWITCH Register */
     case 0x00200:
-        /* ori a3, a3, low(ram_low_size) */
         val = 0x00000000;
         break;
 
@@ -550,7 +545,7 @@ static void malta_fpga_reset(void *opaque)
     snprintf(s->display_text, 9, "        ");
 }
 
-static void malta_fgpa_display_event(void *opaque, int event)
+static void malta_fgpa_display_event(void *opaque, QEMUChrEvent event)
 {
     MaltaFPGAState *s = opaque;
 
@@ -574,7 +569,7 @@ static MaltaFPGAState *malta_fpga_init(MemoryRegion *address_space,
     MaltaFPGAState *s;
     Chardev *chr;
 
-    s = (MaltaFPGAState *)g_malloc0(sizeof(MaltaFPGAState));
+    s = g_new0(MaltaFPGAState, 1);
 
     memory_region_init_io(&s->iomem, NULL, &malta_fpga_ops, s,
                           "malta-fpga", 0x100000);
@@ -849,24 +844,24 @@ static void write_bootloader(uint8_t *base, int64_t run_addr,
     /* Small bootloader */
     p = (uint32_t *)base;
 
-    stl_p(p++, 0x08000000 |                                      /* j 0x1fc00580 */
+    stl_p(p++, 0x08000000 |                  /* j 0x1fc00580 */
                  ((run_addr + 0x580) & 0x0fffffff) >> 2);
-    stl_p(p++, 0x00000000);                                      /* nop */
+    stl_p(p++, 0x00000000);                  /* nop */
 
     /* YAMON service vector */
-    stl_p(base + 0x500, run_addr + 0x0580);      /* start: */
-    stl_p(base + 0x504, run_addr + 0x083c);      /* print_count: */
-    stl_p(base + 0x520, run_addr + 0x0580);      /* start: */
-    stl_p(base + 0x52c, run_addr + 0x0800);      /* flush_cache: */
-    stl_p(base + 0x534, run_addr + 0x0808);      /* print: */
-    stl_p(base + 0x538, run_addr + 0x0800);      /* reg_cpu_isr: */
-    stl_p(base + 0x53c, run_addr + 0x0800);      /* unred_cpu_isr: */
-    stl_p(base + 0x540, run_addr + 0x0800);      /* reg_ic_isr: */
-    stl_p(base + 0x544, run_addr + 0x0800);      /* unred_ic_isr: */
-    stl_p(base + 0x548, run_addr + 0x0800);      /* reg_esr: */
-    stl_p(base + 0x54c, run_addr + 0x0800);      /* unreg_esr: */
-    stl_p(base + 0x550, run_addr + 0x0800);      /* getchar: */
-    stl_p(base + 0x554, run_addr + 0x0800);      /* syscon_read: */
+    stl_p(base + 0x500, run_addr + 0x0580);  /* start: */
+    stl_p(base + 0x504, run_addr + 0x083c);  /* print_count: */
+    stl_p(base + 0x520, run_addr + 0x0580);  /* start: */
+    stl_p(base + 0x52c, run_addr + 0x0800);  /* flush_cache: */
+    stl_p(base + 0x534, run_addr + 0x0808);  /* print: */
+    stl_p(base + 0x538, run_addr + 0x0800);  /* reg_cpu_isr: */
+    stl_p(base + 0x53c, run_addr + 0x0800);  /* unred_cpu_isr: */
+    stl_p(base + 0x540, run_addr + 0x0800);  /* reg_ic_isr: */
+    stl_p(base + 0x544, run_addr + 0x0800);  /* unred_ic_isr: */
+    stl_p(base + 0x548, run_addr + 0x0800);  /* reg_esr: */
+    stl_p(base + 0x54c, run_addr + 0x0800);  /* unreg_esr: */
+    stl_p(base + 0x550, run_addr + 0x0800);  /* getchar: */
+    stl_p(base + 0x554, run_addr + 0x0800);  /* syscon_read: */
 
 
     /* Second part of the bootloader */
@@ -874,9 +869,9 @@ static void write_bootloader(uint8_t *base, int64_t run_addr,
 
     if (semihosting_get_argc()) {
         /* Preserve a0 content as arguments have been passed */
-        stl_p(p++, 0x00000000);                         /* nop */
+        stl_p(p++, 0x00000000);              /* nop */
     } else {
-        stl_p(p++, 0x24040002);                         /* addiu a0, zero, 2 */
+        stl_p(p++, 0x24040002);              /* addiu a0, zero, 2 */
     }
 
     /* lui sp, high(ENVP_ADDR) */
@@ -897,104 +892,106 @@ static void write_bootloader(uint8_t *base, int64_t run_addr,
     stl_p(p++, 0x34e70000 | (loaderparams.ram_low_size & 0xffff));
 
     /* Load BAR registers as done by YAMON */
-    stl_p(p++, 0x3c09b400);                                      /* lui t1, 0xb400 */
+    stl_p(p++, 0x3c09b400);                  /* lui t1, 0xb400 */
 
 #ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c08df00);                                      /* lui t0, 0xdf00 */
+    stl_p(p++, 0x3c08df00);                  /* lui t0, 0xdf00 */
 #else
-    stl_p(p++, 0x340800df);                                      /* ori t0, r0, 0x00df */
+    stl_p(p++, 0x340800df);                  /* ori t0, r0, 0x00df */
 #endif
-    stl_p(p++, 0xad280068);                                      /* sw t0, 0x0068(t1) */
+    stl_p(p++, 0xad280068);                  /* sw t0, 0x0068(t1) */
 
-    stl_p(p++, 0x3c09bbe0);                                      /* lui t1, 0xbbe0 */
-
-#ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c08c000);                                      /* lui t0, 0xc000 */
-#else
-    stl_p(p++, 0x340800c0);                                      /* ori t0, r0, 0x00c0 */
-#endif
-    stl_p(p++, 0xad280048);                                      /* sw t0, 0x0048(t1) */
-#ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c084000);                                      /* lui t0, 0x4000 */
-#else
-    stl_p(p++, 0x34080040);                                      /* ori t0, r0, 0x0040 */
-#endif
-    stl_p(p++, 0xad280050);                                      /* sw t0, 0x0050(t1) */
+    stl_p(p++, 0x3c09bbe0);                  /* lui t1, 0xbbe0 */
 
 #ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c088000);                                      /* lui t0, 0x8000 */
+    stl_p(p++, 0x3c08c000);                  /* lui t0, 0xc000 */
 #else
-    stl_p(p++, 0x34080080);                                      /* ori t0, r0, 0x0080 */
+    stl_p(p++, 0x340800c0);                  /* ori t0, r0, 0x00c0 */
 #endif
-    stl_p(p++, 0xad280058);                                      /* sw t0, 0x0058(t1) */
+    stl_p(p++, 0xad280048);                  /* sw t0, 0x0048(t1) */
 #ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c083f00);                                      /* lui t0, 0x3f00 */
+    stl_p(p++, 0x3c084000);                  /* lui t0, 0x4000 */
 #else
-    stl_p(p++, 0x3408003f);                                      /* ori t0, r0, 0x003f */
+    stl_p(p++, 0x34080040);                  /* ori t0, r0, 0x0040 */
 #endif
-    stl_p(p++, 0xad280060);                                      /* sw t0, 0x0060(t1) */
+    stl_p(p++, 0xad280050);                  /* sw t0, 0x0050(t1) */
 
 #ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c08c100);                                      /* lui t0, 0xc100 */
+    stl_p(p++, 0x3c088000);                  /* lui t0, 0x8000 */
 #else
-    stl_p(p++, 0x340800c1);                                      /* ori t0, r0, 0x00c1 */
+    stl_p(p++, 0x34080080);                  /* ori t0, r0, 0x0080 */
 #endif
-    stl_p(p++, 0xad280080);                                      /* sw t0, 0x0080(t1) */
+    stl_p(p++, 0xad280058);                  /* sw t0, 0x0058(t1) */
 #ifdef TARGET_WORDS_BIGENDIAN
-    stl_p(p++, 0x3c085e00);                                      /* lui t0, 0x5e00 */
+    stl_p(p++, 0x3c083f00);                  /* lui t0, 0x3f00 */
 #else
-    stl_p(p++, 0x3408005e);                                      /* ori t0, r0, 0x005e */
+    stl_p(p++, 0x3408003f);                  /* ori t0, r0, 0x003f */
 #endif
-    stl_p(p++, 0xad280088);                                      /* sw t0, 0x0088(t1) */
+    stl_p(p++, 0xad280060);                  /* sw t0, 0x0060(t1) */
+
+#ifdef TARGET_WORDS_BIGENDIAN
+    stl_p(p++, 0x3c08c100);                  /* lui t0, 0xc100 */
+#else
+    stl_p(p++, 0x340800c1);                  /* ori t0, r0, 0x00c1 */
+#endif
+    stl_p(p++, 0xad280080);                  /* sw t0, 0x0080(t1) */
+#ifdef TARGET_WORDS_BIGENDIAN
+    stl_p(p++, 0x3c085e00);                  /* lui t0, 0x5e00 */
+#else
+    stl_p(p++, 0x3408005e);                  /* ori t0, r0, 0x005e */
+#endif
+    stl_p(p++, 0xad280088);                  /* sw t0, 0x0088(t1) */
 
     /* Jump to kernel code */
-    stl_p(p++, 0x3c1f0000 | ((kernel_entry >> 16) & 0xffff));    /* lui ra, high(kernel_entry) */
-    stl_p(p++, 0x37ff0000 | (kernel_entry & 0xffff));            /* ori ra, ra, low(kernel_entry) */
-    stl_p(p++, 0x03e00009);                                      /* jalr ra */
-    stl_p(p++, 0x00000000);                                      /* nop */
+    stl_p(p++, 0x3c1f0000 |
+          ((kernel_entry >> 16) & 0xffff));  /* lui ra, high(kernel_entry) */
+    stl_p(p++, 0x37ff0000 |
+          (kernel_entry & 0xffff));          /* ori ra, ra, low(kernel_entry) */
+    stl_p(p++, 0x03e00009);                  /* jalr ra */
+    stl_p(p++, 0x00000000);                  /* nop */
 
     /* YAMON subroutines */
     p = (uint32_t *) (base + 0x800);
-    stl_p(p++, 0x03e00009);                                     /* jalr ra */
-    stl_p(p++, 0x24020000);                                     /* li v0,0 */
+    stl_p(p++, 0x03e00009);                  /* jalr ra */
+    stl_p(p++, 0x24020000);                  /* li v0,0 */
     /* 808 YAMON print */
-    stl_p(p++, 0x03e06821);                                     /* move t5,ra */
-    stl_p(p++, 0x00805821);                                     /* move t3,a0 */
-    stl_p(p++, 0x00a05021);                                     /* move t2,a1 */
-    stl_p(p++, 0x91440000);                                     /* lbu a0,0(t2) */
-    stl_p(p++, 0x254a0001);                                     /* addiu t2,t2,1 */
-    stl_p(p++, 0x10800005);                                     /* beqz a0,834 */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x0ff0021c);                                     /* jal 870 */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x1000fff9);                                     /* b 814 */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x01a00009);                                     /* jalr t5 */
-    stl_p(p++, 0x01602021);                                     /* move a0,t3 */
+    stl_p(p++, 0x03e06821);                  /* move t5,ra */
+    stl_p(p++, 0x00805821);                  /* move t3,a0 */
+    stl_p(p++, 0x00a05021);                  /* move t2,a1 */
+    stl_p(p++, 0x91440000);                  /* lbu a0,0(t2) */
+    stl_p(p++, 0x254a0001);                  /* addiu t2,t2,1 */
+    stl_p(p++, 0x10800005);                  /* beqz a0,834 */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x0ff0021c);                  /* jal 870 */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x1000fff9);                  /* b 814 */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x01a00009);                  /* jalr t5 */
+    stl_p(p++, 0x01602021);                  /* move a0,t3 */
     /* 0x83c YAMON print_count */
-    stl_p(p++, 0x03e06821);                                     /* move t5,ra */
-    stl_p(p++, 0x00805821);                                     /* move t3,a0 */
-    stl_p(p++, 0x00a05021);                                     /* move t2,a1 */
-    stl_p(p++, 0x00c06021);                                     /* move t4,a2 */
-    stl_p(p++, 0x91440000);                                     /* lbu a0,0(t2) */
-    stl_p(p++, 0x0ff0021c);                                     /* jal 870 */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x254a0001);                                     /* addiu t2,t2,1 */
-    stl_p(p++, 0x258cffff);                                     /* addiu t4,t4,-1 */
-    stl_p(p++, 0x1580fffa);                                     /* bnez t4,84c */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x01a00009);                                     /* jalr t5 */
-    stl_p(p++, 0x01602021);                                     /* move a0,t3 */
+    stl_p(p++, 0x03e06821);                  /* move t5,ra */
+    stl_p(p++, 0x00805821);                  /* move t3,a0 */
+    stl_p(p++, 0x00a05021);                  /* move t2,a1 */
+    stl_p(p++, 0x00c06021);                  /* move t4,a2 */
+    stl_p(p++, 0x91440000);                  /* lbu a0,0(t2) */
+    stl_p(p++, 0x0ff0021c);                  /* jal 870 */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x254a0001);                  /* addiu t2,t2,1 */
+    stl_p(p++, 0x258cffff);                  /* addiu t4,t4,-1 */
+    stl_p(p++, 0x1580fffa);                  /* bnez t4,84c */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x01a00009);                  /* jalr t5 */
+    stl_p(p++, 0x01602021);                  /* move a0,t3 */
     /* 0x870 */
-    stl_p(p++, 0x3c08b800);                                     /* lui t0,0xb400 */
-    stl_p(p++, 0x350803f8);                                     /* ori t0,t0,0x3f8 */
-    stl_p(p++, 0x91090005);                                     /* lbu t1,5(t0) */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x31290040);                                     /* andi t1,t1,0x40 */
-    stl_p(p++, 0x1120fffc);                                     /* beqz t1,878 <outch+0x8> */
-    stl_p(p++, 0x00000000);                                     /* nop */
-    stl_p(p++, 0x03e00009);                                     /* jalr ra */
-    stl_p(p++, 0xa1040000);                                     /* sb a0,0(t0) */
+    stl_p(p++, 0x3c08b800);                  /* lui t0,0xb400 */
+    stl_p(p++, 0x350803f8);                  /* ori t0,t0,0x3f8 */
+    stl_p(p++, 0x91090005);                  /* lbu t1,5(t0) */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x31290040);                  /* andi t1,t1,0x40 */
+    stl_p(p++, 0x1120fffc);                  /* beqz t1,878 <outch+0x8> */
+    stl_p(p++, 0x00000000);                  /* nop */
+    stl_p(p++, 0x03e00009);                  /* jalr ra */
+    stl_p(p++, 0xa1040000);                  /* sb a0,0(t0) */
 
 }
 
@@ -1042,7 +1039,8 @@ static int64_t load_kernel(void)
     kernel_size = load_elf(loaderparams.kernel_filename, NULL,
                            cpu_mips_kseg0_to_phys, NULL,
                            (uint64_t *)&kernel_entry, NULL,
-                           (uint64_t *)&kernel_high, big_endian, EM_MIPS, 1, 0);
+                           (uint64_t *)&kernel_high, NULL, big_endian, EM_MIPS,
+                           1, 0);
     if (kernel_size < 0) {
         error_report("could not load kernel '%s': %s",
                      loaderparams.kernel_filename,
@@ -1226,7 +1224,6 @@ void mips_malta_init(MachineState *machine)
     char *filename;
     PFlashCFI01 *fl;
     MemoryRegion *system_memory = get_system_memory();
-    MemoryRegion *ram_high = g_new(MemoryRegion, 1);
     MemoryRegion *ram_low_preio = g_new(MemoryRegion, 1);
     MemoryRegion *ram_low_postio;
     MemoryRegion *bios, *bios_copy = g_new(MemoryRegion, 1);
@@ -1235,12 +1232,9 @@ void mips_malta_init(MachineState *machine)
     int64_t kernel_entry, bootloader_run_addr;
     PCIBus *pci_bus;
     ISABus *isa_bus;
-    qemu_irq *isa_irq;
     qemu_irq cbus_irq, i8259_irq;
-    int piix4_devfn;
     I2CBus *smbus;
     DriveInfo *dinfo;
-    DriveInfo *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
     int fl_idx = 0;
     int be;
 
@@ -1250,7 +1244,7 @@ void mips_malta_init(MachineState *machine)
     /*
      * The whole address space decoded by the GT-64120A doesn't generate
      * exception when accessing invalid memory. Create an empty slot to
-     * emulate this feature.\
+     * emulate this feature.
      */
     empty_slot_init(0, 0x20000000);
 
@@ -1267,13 +1261,11 @@ void mips_malta_init(MachineState *machine)
     }
 
     /* register RAM at high address where it is undisturbed by IO */
-    memory_region_allocate_system_memory(ram_high, NULL, "mips_malta.ram",
-                                         ram_size);
-    memory_region_add_subregion(system_memory, 0x80000000, ram_high);
+    memory_region_add_subregion(system_memory, 0x80000000, machine->ram);
 
     /* alias for pre IO hole access */
     memory_region_init_alias(ram_low_preio, NULL, "mips_malta_low_preio.ram",
-                             ram_high, 0, MIN(ram_size, 256 * MiB));
+                             machine->ram, 0, MIN(ram_size, 256 * MiB));
     memory_region_add_subregion(system_memory, 0, ram_low_preio);
 
     /* alias for post IO hole access, if there is enough RAM */
@@ -1281,7 +1273,7 @@ void mips_malta_init(MachineState *machine)
         ram_low_postio = g_new(MemoryRegion, 1);
         memory_region_init_alias(ram_low_postio, NULL,
                                  "mips_malta_low_postio.ram",
-                                 ram_high, 512 * MiB,
+                                 machine->ram, 512 * MiB,
                                  ram_size - 512 * MiB);
         memory_region_add_subregion(system_memory, 512 * MiB,
                                     ram_low_postio);
@@ -1407,37 +1399,17 @@ void mips_malta_init(MachineState *machine)
     /* Board ID = 0x420 (Malta Board with CoreLV) */
     stl_p(memory_region_get_ram_ptr(bios_copy) + 0x10, 0x00000420);
 
-    /*
-     * We have a circular dependency problem: pci_bus depends on isa_irq,
-     * isa_irq is provided by i8259, i8259 depends on ISA, ISA depends
-     * on piix4, and piix4 depends on pci_bus.  To stop the cycle we have
-     * qemu_irq_proxy() adds an extra bit of indirection, allowing us
-     * to resolve the isa_irq -> i8259 dependency after i8259 is initialized.
-     */
-    isa_irq = qemu_irq_proxy(&s->i8259, 16);
-
     /* Northbridge */
-    pci_bus = gt64120_register(isa_irq);
+    pci_bus = gt64120_register(s->i8259);
 
     /* Southbridge */
-    ide_drive_get(hd, ARRAY_SIZE(hd));
+    dev = piix4_create(pci_bus, &isa_bus, &smbus);
 
-    piix4_devfn = piix4_init(pci_bus, &isa_bus, 80);
-
-    /*
-     * Interrupt controller
-     * The 8259 is attached to the MIPS CPU INT0 pin, ie interrupt 2
-     */
-    s->i8259 = i8259_init(isa_bus, i8259_irq);
-
-    isa_bus_irqs(isa_bus, s->i8259);
-    pci_piix4_ide_init(pci_bus, hd, piix4_devfn + 1);
-    pci_create_simple(pci_bus, piix4_devfn + 2, "piix4-usb-uhci");
-    smbus = piix4_pm_init(pci_bus, piix4_devfn + 3, 0x1100,
-                          isa_get_irq(NULL, 9), NULL, 0, NULL);
-    pit = i8254_pit_init(isa_bus, 0x40, 0, NULL);
-    i8257_dma_init(isa_bus, 0);
-    mc146818_rtc_init(isa_bus, 2000, NULL);
+    /* Interrupt controller */
+    qdev_connect_gpio_out_named(dev, "intr", 0, i8259_irq);
+    for (int i = 0; i < ISA_NUM_IRQS; i++) {
+        s->i8259[i] = qdev_get_gpio_in_named(dev, "isa", i);
+    }
 
     /* generate SPD EEPROM data */
     generate_eeprom_spd(&smbus_eeprom_buf[0 * 256], ram_size);
@@ -1467,12 +1439,13 @@ static void mips_malta_machine_init(MachineClass *mc)
     mc->init = mips_malta_init;
     mc->block_default_type = IF_IDE;
     mc->max_cpus = 16;
-    mc->is_default = 1;
+    mc->is_default = true;
 #ifdef TARGET_MIPS64
     mc->default_cpu_type = MIPS_CPU_TYPE_NAME("20Kc");
 #else
     mc->default_cpu_type = MIPS_CPU_TYPE_NAME("24Kf");
 #endif
+    mc->default_ram_id = "mips_malta.ram";
 }
 
 DEFINE_MACHINE("malta", mips_malta_machine_init)

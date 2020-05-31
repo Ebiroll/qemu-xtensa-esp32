@@ -40,6 +40,7 @@
 #include "pci.h"
 #include "trace.h"
 #include "qapi/error.h"
+#include "migration/blocker.h"
 
 #define TYPE_VFIO_PCI "vfio-pci"
 #define PCI_VFIO(obj)    OBJECT_CHECK(VFIOPCIDevice, obj, TYPE_VFIO_PCI)
@@ -215,30 +216,18 @@ static void vfio_intx_disable_kvm(VFIOPCIDevice *vdev)
 #endif
 }
 
-static void vfio_intx_update(PCIDevice *pdev)
+static void vfio_intx_update(VFIOPCIDevice *vdev, PCIINTxRoute *route)
 {
-    VFIOPCIDevice *vdev = PCI_VFIO(pdev);
-    PCIINTxRoute route;
     Error *err = NULL;
 
-    if (vdev->interrupt != VFIO_INT_INTx) {
-        return;
-    }
-
-    route = pci_device_route_intx_to_irq(&vdev->pdev, vdev->intx.pin);
-
-    if (!pci_intx_route_changed(&vdev->intx.route, &route)) {
-        return; /* Nothing changed */
-    }
-
     trace_vfio_intx_update(vdev->vbasedev.name,
-                           vdev->intx.route.irq, route.irq);
+                           vdev->intx.route.irq, route->irq);
 
     vfio_intx_disable_kvm(vdev);
 
-    vdev->intx.route = route;
+    vdev->intx.route = *route;
 
-    if (route.mode != PCI_INTX_ENABLED) {
+    if (route->mode != PCI_INTX_ENABLED) {
         return;
     }
 
@@ -249,6 +238,30 @@ static void vfio_intx_update(PCIDevice *pdev)
 
     /* Re-enable the interrupt in cased we missed an EOI */
     vfio_intx_eoi(&vdev->vbasedev);
+}
+
+static void vfio_intx_routing_notifier(PCIDevice *pdev)
+{
+    VFIOPCIDevice *vdev = PCI_VFIO(pdev);
+    PCIINTxRoute route;
+
+    if (vdev->interrupt != VFIO_INT_INTx) {
+        return;
+    }
+
+    route = pci_device_route_intx_to_irq(&vdev->pdev, vdev->intx.pin);
+
+    if (pci_intx_route_changed(&vdev->intx.route, &route)) {
+        vfio_intx_update(vdev, &route);
+    }
+}
+
+static void vfio_irqchip_change(Notifier *notify, void *data)
+{
+    VFIOPCIDevice *vdev = container_of(notify, VFIOPCIDevice,
+                                       irqchip_change_notifier);
+
+    vfio_intx_update(vdev, &vdev->intx.route);
 }
 
 static int vfio_intx_enable(VFIOPCIDevice *vdev, Error **errp)
@@ -651,6 +664,7 @@ retry:
         }
 
         g_free(vdev->msi_vectors);
+        vdev->msi_vectors = NULL;
 
         if (ret > 0 && ret != vdev->nr_vectors) {
             vdev->nr_vectors = ret;
@@ -2731,6 +2745,18 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
         return;
     }
 
+    if (!pdev->failover_pair_id) {
+        error_setg(&vdev->migration_blocker,
+                "VFIO device doesn't support migration");
+        ret = migrate_add_blocker(vdev->migration_blocker, &err);
+        if (ret) {
+            error_propagate(errp, err);
+            error_free(vdev->migration_blocker);
+            vdev->migration_blocker = NULL;
+            return;
+        }
+    }
+
     vdev->vbasedev.name = g_path_get_basename(vdev->vbasedev.sysfsdev);
     vdev->vbasedev.ops = &vfio_pci_ops;
     vdev->vbasedev.type = VFIO_DEVICE_TYPE_PCI;
@@ -2953,31 +2979,34 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
     if (vfio_pci_read_config(&vdev->pdev, PCI_INTERRUPT_PIN, 1)) {
         vdev->intx.mmap_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
                                                   vfio_intx_mmap_enable, vdev);
-        pci_device_set_intx_routing_notifier(&vdev->pdev, vfio_intx_update);
+        pci_device_set_intx_routing_notifier(&vdev->pdev,
+                                             vfio_intx_routing_notifier);
+        vdev->irqchip_change_notifier.notify = vfio_irqchip_change;
+        kvm_irqchip_add_change_notifier(&vdev->irqchip_change_notifier);
         ret = vfio_intx_enable(vdev, errp);
         if (ret) {
-            goto out_teardown;
+            goto out_deregister;
         }
     }
 
     if (vdev->display != ON_OFF_AUTO_OFF) {
         ret = vfio_display_probe(vdev, errp);
         if (ret) {
-            goto out_teardown;
+            goto out_deregister;
         }
     }
     if (vdev->enable_ramfb && vdev->dpy == NULL) {
         error_setg(errp, "ramfb=on requires display=on");
-        goto out_teardown;
+        goto out_deregister;
     }
     if (vdev->display_xres || vdev->display_yres) {
         if (vdev->dpy == NULL) {
             error_setg(errp, "xres and yres properties require display=on");
-            goto out_teardown;
+            goto out_deregister;
         }
         if (vdev->dpy->edid_regs == NULL) {
             error_setg(errp, "xres and yres properties need edid support");
-            goto out_teardown;
+            goto out_deregister;
         }
     }
 
@@ -3001,12 +3030,19 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
 
     return;
 
-out_teardown:
+out_deregister:
     pci_device_set_intx_routing_notifier(&vdev->pdev, NULL);
+    kvm_irqchip_remove_change_notifier(&vdev->irqchip_change_notifier);
+out_teardown:
     vfio_teardown_msi(vdev);
     vfio_bars_exit(vdev);
 error:
     error_prepend(errp, VFIO_MSG_PREFIX, vdev->vbasedev.name);
+    if (vdev->migration_blocker) {
+        migrate_del_blocker(vdev->migration_blocker);
+        error_free(vdev->migration_blocker);
+        vdev->migration_blocker = NULL;
+    }
 }
 
 static void vfio_instance_finalize(Object *obj)
@@ -3018,6 +3054,10 @@ static void vfio_instance_finalize(Object *obj)
     vfio_bars_finalize(vdev);
     g_free(vdev->emulated_config_bits);
     g_free(vdev->rom);
+    if (vdev->migration_blocker) {
+        migrate_del_blocker(vdev->migration_blocker);
+        error_free(vdev->migration_blocker);
+    }
     /*
      * XXX Leaking igd_opregion is not an oversight, we can't remove the
      * fw_cfg entry therefore leaking this allocation seems like the safest
@@ -3036,6 +3076,9 @@ static void vfio_exitfn(PCIDevice *pdev)
     vfio_unregister_req_notifier(vdev);
     vfio_unregister_err_notifier(vdev);
     pci_device_set_intx_routing_notifier(&vdev->pdev, NULL);
+    if (vdev->irqchip_change_notifier.notify) {
+        kvm_irqchip_remove_change_notifier(&vdev->irqchip_change_notifier);
+    }
     vfio_disable_interrupts(vdev);
     if (vdev->intx.mmap_timer) {
         timer_free(vdev->intx.mmap_timer);
@@ -3150,19 +3193,13 @@ static Property vfio_pci_dev_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
-static const VMStateDescription vfio_pci_vmstate = {
-    .name = "vfio-pci",
-    .unmigratable = 1,
-};
-
 static void vfio_pci_dev_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *pdc = PCI_DEVICE_CLASS(klass);
 
     dc->reset = vfio_pci_reset;
-    dc->props = vfio_pci_dev_properties;
-    dc->vmsd = &vfio_pci_vmstate;
+    device_class_set_props(dc, vfio_pci_dev_properties);
     dc->desc = "VFIO-based PCI device assignment";
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     pdc->realize = vfio_realize;
@@ -3194,7 +3231,7 @@ static void vfio_pci_nohotplug_dev_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->props = vfio_pci_dev_nohotplug_properties;
+    device_class_set_props(dc, vfio_pci_dev_nohotplug_properties);
     dc->hotpluggable = false;
 }
 

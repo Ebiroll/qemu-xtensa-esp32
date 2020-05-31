@@ -31,7 +31,6 @@
 #include "sysemu/kvm.h"
 #include "hw/qdev-properties.h"
 #include "hw/sysbus.h"
-#include "migration/qemu-file-types.h"
 #include "migration/vmstate.h"
 
 static int apic_irq_delivered;
@@ -262,52 +261,6 @@ static void apic_reset_common(DeviceState *dev)
     apic_init_reset(dev);
 }
 
-/* This function is only used for old state version 1 and 2 */
-static int apic_load_old(QEMUFile *f, void *opaque, int version_id)
-{
-    APICCommonState *s = opaque;
-    APICCommonClass *info = APIC_COMMON_GET_CLASS(s);
-    int i;
-
-    if (version_id > 2) {
-        return -EINVAL;
-    }
-
-    /* XXX: what if the base changes? (registered memory regions) */
-    qemu_get_be32s(f, &s->apicbase);
-    qemu_get_8s(f, &s->id);
-    qemu_get_8s(f, &s->arb_id);
-    qemu_get_8s(f, &s->tpr);
-    qemu_get_be32s(f, &s->spurious_vec);
-    qemu_get_8s(f, &s->log_dest);
-    qemu_get_8s(f, &s->dest_mode);
-    for (i = 0; i < 8; i++) {
-        qemu_get_be32s(f, &s->isr[i]);
-        qemu_get_be32s(f, &s->tmr[i]);
-        qemu_get_be32s(f, &s->irr[i]);
-    }
-    for (i = 0; i < APIC_LVT_NB; i++) {
-        qemu_get_be32s(f, &s->lvt[i]);
-    }
-    qemu_get_be32s(f, &s->esr);
-    qemu_get_be32s(f, &s->icr[0]);
-    qemu_get_be32s(f, &s->icr[1]);
-    qemu_get_be32s(f, &s->divide_conf);
-    s->count_shift = qemu_get_be32(f);
-    qemu_get_be32s(f, &s->initial_count);
-    s->initial_count_load_time = qemu_get_be64(f);
-    s->next_time = qemu_get_be64(f);
-
-    if (version_id >= 2) {
-        s->timer_expiry = qemu_get_be64(f);
-    }
-
-    if (info->post_load) {
-        info->post_load(s);
-    }
-    return 0;
-}
-
 static const VMStateDescription vmstate_apic_common;
 
 static void apic_common_realize(DeviceState *dev, Error **errp)
@@ -315,7 +268,10 @@ static void apic_common_realize(DeviceState *dev, Error **errp)
     APICCommonState *s = APIC_COMMON(dev);
     APICCommonClass *info;
     static DeviceState *vapic;
-    int instance_id = s->id;
+    uint32_t instance_id = s->initial_apic_id;
+
+    /* Normally initial APIC ID should be no more than hundreds */
+    assert(instance_id != VMSTATE_INSTANCE_ID_ANY);
 
     info = APIC_COMMON_GET_CLASS(s);
     info->realize(dev, errp);
@@ -331,7 +287,7 @@ static void apic_common_realize(DeviceState *dev, Error **errp)
     }
 
     if (s->legacy_instance_id) {
-        instance_id = -1;
+        instance_id = VMSTATE_INSTANCE_ID_ANY;
     }
     vmstate_register_with_alias_id(NULL, instance_id, &vmstate_apic_common,
                                    s, -1, 0, NULL);
@@ -408,8 +364,6 @@ static const VMStateDescription vmstate_apic_common = {
     .name = "apic",
     .version_id = 3,
     .minimum_version_id = 3,
-    .minimum_version_id_old = 1,
-    .load_state_old = apic_load_old,
     .pre_load = apic_pre_load,
     .pre_save = apic_dispatch_pre_save,
     .post_load = apic_dispatch_post_load,
@@ -499,7 +453,7 @@ static void apic_common_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->reset = apic_reset_common;
-    dc->props = apic_properties_common;
+    device_class_set_props(dc, apic_properties_common);
     dc->realize = apic_common_realize;
     dc->unrealize = apic_common_unrealize;
     /*

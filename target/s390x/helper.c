@@ -52,6 +52,7 @@ hwaddr s390_cpu_get_phys_page_debug(CPUState *cs, vaddr vaddr)
     target_ulong raddr;
     int prot;
     uint64_t asc = env->psw.mask & PSW_MASK_ASC;
+    uint64_t tec;
 
     /* 31-Bit mode */
     if (!(env->psw.mask & PSW_MASK_64)) {
@@ -63,7 +64,11 @@ hwaddr s390_cpu_get_phys_page_debug(CPUState *cs, vaddr vaddr)
         asc = PSW_ASC_PRIMARY;
     }
 
-    if (mmu_translate(env, vaddr, MMU_INST_FETCH, asc, &raddr, &prot, false)) {
+    /*
+     * We want to read code even if IEP is active. Use MMU_DATA_LOAD instead
+     * of MMU_INST_FETCH.
+     */
+    if (mmu_translate(env, vaddr, MMU_DATA_LOAD, asc, &raddr, &prot, &tec)) {
         return -1;
     }
     return raddr;
@@ -84,7 +89,7 @@ hwaddr s390_cpu_get_phys_addr_debug(CPUState *cs, vaddr vaddr)
 static inline bool is_special_wait_psw(uint64_t psw_addr)
 {
     /* signal quiesce */
-    return psw_addr == 0xfffUL;
+    return (psw_addr & 0xfffUL) == 0xfffUL;
 }
 
 void s390_handle_wait(S390CPU *cpu)
@@ -146,7 +151,7 @@ LowCore *cpu_map_lowcore(CPUS390XState *env)
     LowCore *lowcore;
     hwaddr len = sizeof(LowCore);
 
-    lowcore = cpu_physical_memory_map(env->psa, &len, 1);
+    lowcore = cpu_physical_memory_map(env->psa, &len, true);
 
     if (len < sizeof(LowCore)) {
         cpu_abort(env_cpu(env), "Could not map lowcore\n");
@@ -241,7 +246,7 @@ int s390_store_status(S390CPU *cpu, hwaddr addr, bool store_arch)
     hwaddr len = sizeof(*sa);
     int i;
 
-    sa = cpu_physical_memory_map(addr, &len, 1);
+    sa = cpu_physical_memory_map(addr, &len, true);
     if (!sa) {
         return -EFAULT;
     }
@@ -293,7 +298,7 @@ int s390_store_adtl_status(S390CPU *cpu, hwaddr addr, hwaddr len)
     hwaddr save = len;
     int i;
 
-    sa = cpu_physical_memory_map(addr, &save, 1);
+    sa = cpu_physical_memory_map(addr, &save, true);
     if (!sa) {
         return -EFAULT;
     }

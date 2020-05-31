@@ -34,6 +34,8 @@ enum ReplayEvents {
     EVENT_AUDIO_OUT,
     /* for audio in event */
     EVENT_AUDIO_IN,
+    /* for random number generator */
+    EVENT_RANDOM,
     /* for clock read/writes */
     /* some of greater codes are reserved for clocks */
     EVENT_CLOCK,
@@ -51,6 +53,7 @@ enum ReplayEvents {
 
 enum ReplayAsyncEventKind {
     REPLAY_ASYNC_EVENT_BH,
+    REPLAY_ASYNC_EVENT_BH_ONESHOT,
     REPLAY_ASYNC_EVENT_INPUT,
     REPLAY_ASYNC_EVENT_INPUT_SYNC,
     REPLAY_ASYNC_EVENT_CHAR_READ,

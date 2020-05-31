@@ -835,7 +835,7 @@ static int create_dynamic_disk(BlockBackend *blk, uint8_t *buf,
 
     /* Write the footer (twice: at the beginning and at the end) */
     block_size = 0x200000;
-    num_bat_entries = (total_sectors + block_size / 512) / (block_size / 512);
+    num_bat_entries = DIV_ROUND_UP(total_sectors, block_size / 512);
 
     ret = blk_pwrite(blk, offset, buf, HEADER_SIZE, 0);
     if (ret < 0) {
@@ -898,7 +898,7 @@ static int create_fixed_disk(BlockBackend *blk, uint8_t *buf,
     /* Add footer to total size */
     total_size += HEADER_SIZE;
 
-    ret = blk_truncate(blk, total_size, PREALLOC_MODE_OFF, errp);
+    ret = blk_truncate(blk, total_size, false, PREALLOC_MODE_OFF, errp);
     if (ret < 0) {
         return ret;
     }
@@ -1089,8 +1089,10 @@ out:
     return ret;
 }
 
-static int coroutine_fn vpc_co_create_opts(const char *filename,
-                                           QemuOpts *opts, Error **errp)
+static int coroutine_fn vpc_co_create_opts(BlockDriver *drv,
+                                           const char *filename,
+                                           QemuOpts *opts,
+                                           Error **errp)
 {
     BlockdevCreateOptions *create_options = NULL;
     QDict *qdict;

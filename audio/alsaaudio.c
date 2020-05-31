@@ -307,6 +307,13 @@ static snd_pcm_format_t aud_to_alsafmt (AudioFormat fmt, int endianness)
             return SND_PCM_FORMAT_U32_LE;
         }
 
+    case AUDIO_FORMAT_F32:
+        if (endianness) {
+            return SND_PCM_FORMAT_FLOAT_BE;
+        } else {
+            return SND_PCM_FORMAT_FLOAT_LE;
+        }
+
     default:
         dolog ("Internal logic error: Bad audio format %d\n", fmt);
 #ifdef DEBUG_AUDIO
@@ -368,6 +375,16 @@ static int alsa_to_audfmt (snd_pcm_format_t alsafmt, AudioFormat *fmt,
     case SND_PCM_FORMAT_U32_BE:
         *endianness = 1;
         *fmt = AUDIO_FORMAT_U32;
+        break;
+
+    case SND_PCM_FORMAT_FLOAT_LE:
+        *endianness = 0;
+        *fmt = AUDIO_FORMAT_F32;
+        break;
+
+    case SND_PCM_FORMAT_FLOAT_BE:
+        *endianness = 1;
+        *fmt = AUDIO_FORMAT_F32;
         break;
 
     default:
@@ -493,13 +510,6 @@ static int alsa_open(bool in, struct alsa_params_req *req,
         goto err;
     }
 
-    if (nchannels != 1 && nchannels != 2) {
-        alsa_logerr2 (err, typ,
-                      "Can not handle obtained number of channels %d\n",
-                      nchannels);
-        goto err;
-    }
-
     if (apdo->buffer_length) {
         int dir = 0;
         unsigned int btime = apdo->buffer_length;
@@ -602,7 +612,7 @@ static size_t alsa_write(HWVoiceOut *hw, void *buf, size_t len)
 {
     ALSAVoiceOut *alsa = (ALSAVoiceOut *) hw;
     size_t pos = 0;
-    size_t len_frames = len >> hw->info.shift;
+    size_t len_frames = len / hw->info.bytes_per_frame;
 
     while (len_frames) {
         char *src = advance(buf, pos);
@@ -648,7 +658,7 @@ static size_t alsa_write(HWVoiceOut *hw, void *buf, size_t len)
             }
         }
 
-        pos += written << hw->info.shift;
+        pos += written * hw->info.bytes_per_frame;
         if (written < len_frames) {
             break;
         }
@@ -802,13 +812,14 @@ static size_t alsa_read(HWVoiceIn *hw, void *buf, size_t len)
         void *dst = advance(buf, pos);
         snd_pcm_sframes_t nread;
 
-        nread = snd_pcm_readi(alsa->handle, dst, len >> hw->info.shift);
+        nread = snd_pcm_readi(
+            alsa->handle, dst, len / hw->info.bytes_per_frame);
 
         if (nread <= 0) {
             switch (nread) {
             case 0:
                 trace_alsa_read_zero(len);
-                return pos;;
+                return pos;
 
             case -EPIPE:
                 if (alsa_recover(alsa->handle)) {
@@ -824,12 +835,12 @@ static size_t alsa_read(HWVoiceIn *hw, void *buf, size_t len)
             default:
                 alsa_logerr(nread, "Failed to read %zu frames to %p\n",
                             len, dst);
-                return pos;;
+                return pos;
             }
         }
 
-        pos += nread << hw->info.shift;
-        len -= nread << hw->info.shift;
+        pos += nread * hw->info.bytes_per_frame;
+        len -= nread * hw->info.bytes_per_frame;
     }
 
     return pos;
@@ -912,6 +923,7 @@ static struct audio_pcm_ops alsa_pcm_ops = {
     .init_out = alsa_init_out,
     .fini_out = alsa_fini_out,
     .write    = alsa_write,
+    .run_buffer_out = audio_generic_run_buffer_out,
     .enable_out = alsa_enable_out,
 
     .init_in  = alsa_init_in,

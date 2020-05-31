@@ -39,6 +39,7 @@
 #include "qemu/config-file.h"
 #include "qemu/cutils.h"
 #include "qapi/error.h"
+#include "hw/acpi/aml-build.h"
 
 #define FW_CFG_FILE_SLOTS_DFLT 0x20
 
@@ -237,7 +238,7 @@ static void fw_cfg_bootsplash(FWCfgState *s)
 static void fw_cfg_reboot(FWCfgState *s)
 {
     const char *reboot_timeout = NULL;
-    int64_t rt_val = -1;
+    uint64_t rt_val = -1;
     uint32_t rt_le32;
 
     /* get user configuration */
@@ -247,10 +248,11 @@ static void fw_cfg_reboot(FWCfgState *s)
 
     if (reboot_timeout) {
         rt_val = qemu_opt_get_number(opts, "reboot-timeout", -1);
+
         /* validate the input */
-        if (rt_val < 0 || rt_val > 0xffff) {
+        if (rt_val > 0xffff && rt_val != (uint64_t)-1) {
             error_report("reboot timeout is invalid,"
-                         "it should be a value between 0 and 65535");
+                         "it should be a value between -1 and 65535");
             exit(1);
         }
     }
@@ -609,11 +611,74 @@ bool fw_cfg_dma_enabled(void *opaque)
     return s->dma_enabled;
 }
 
+static bool fw_cfg_acpi_mr_restore(void *opaque)
+{
+    FWCfgState *s = opaque;
+    bool mr_aligned;
+
+    mr_aligned = QEMU_IS_ALIGNED(s->table_mr_size, qemu_real_host_page_size) &&
+                 QEMU_IS_ALIGNED(s->linker_mr_size, qemu_real_host_page_size) &&
+                 QEMU_IS_ALIGNED(s->rsdp_mr_size, qemu_real_host_page_size);
+    return s->acpi_mr_restore && !mr_aligned;
+}
+
+static void fw_cfg_update_mr(FWCfgState *s, uint16_t key, size_t size)
+{
+    MemoryRegion *mr;
+    ram_addr_t offset;
+    int arch = !!(key & FW_CFG_ARCH_LOCAL);
+    void *ptr;
+
+    key &= FW_CFG_ENTRY_MASK;
+    assert(key < fw_cfg_max_entry(s));
+
+    ptr = s->entries[arch][key].data;
+    mr = memory_region_from_host(ptr, &offset);
+
+    memory_region_ram_resize(mr, size, &error_abort);
+}
+
+static int fw_cfg_acpi_mr_restore_post_load(void *opaque, int version_id)
+{
+    FWCfgState *s = opaque;
+    int i, index;
+
+    assert(s->files);
+
+    index = be32_to_cpu(s->files->count);
+
+    for (i = 0; i < index; i++) {
+        if (!strcmp(s->files->f[i].name, ACPI_BUILD_TABLE_FILE)) {
+            fw_cfg_update_mr(s, FW_CFG_FILE_FIRST + i, s->table_mr_size);
+        } else if (!strcmp(s->files->f[i].name, ACPI_BUILD_LOADER_FILE)) {
+            fw_cfg_update_mr(s, FW_CFG_FILE_FIRST + i, s->linker_mr_size);
+        } else if (!strcmp(s->files->f[i].name, ACPI_BUILD_RSDP_FILE)) {
+            fw_cfg_update_mr(s, FW_CFG_FILE_FIRST + i, s->rsdp_mr_size);
+        }
+    }
+
+    return 0;
+}
+
 static const VMStateDescription vmstate_fw_cfg_dma = {
     .name = "fw_cfg/dma",
     .needed = fw_cfg_dma_enabled,
     .fields = (VMStateField[]) {
         VMSTATE_UINT64(dma_addr, FWCfgState),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
+static const VMStateDescription vmstate_fw_cfg_acpi_mr = {
+    .name = "fw_cfg/acpi_mr",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = fw_cfg_acpi_mr_restore,
+    .post_load = fw_cfg_acpi_mr_restore_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT64(table_mr_size, FWCfgState),
+        VMSTATE_UINT64(linker_mr_size, FWCfgState),
+        VMSTATE_UINT64(rsdp_mr_size, FWCfgState),
         VMSTATE_END_OF_LIST()
     },
 };
@@ -630,6 +695,7 @@ static const VMStateDescription vmstate_fw_cfg = {
     },
     .subsections = (const VMStateDescription*[]) {
         &vmstate_fw_cfg_dma,
+        &vmstate_fw_cfg_acpi_mr,
         NULL,
     }
 };
@@ -690,6 +756,15 @@ void fw_cfg_add_string(FWCfgState *s, uint16_t key, const char *value)
     fw_cfg_add_bytes(s, key, g_memdup(value, sz), sz);
 }
 
+void fw_cfg_modify_string(FWCfgState *s, uint16_t key, const char *value)
+{
+    size_t sz = strlen(value) + 1;
+    char *old;
+
+    old = fw_cfg_modify_bytes_read(s, key, g_memdup(value, sz), sz);
+    g_free(old);
+}
+
 void fw_cfg_add_i16(FWCfgState *s, uint16_t key, uint16_t value)
 {
     uint16_t *copy;
@@ -720,6 +795,16 @@ void fw_cfg_add_i32(FWCfgState *s, uint16_t key, uint32_t value)
     fw_cfg_add_bytes(s, key, copy, sizeof(value));
 }
 
+void fw_cfg_modify_i32(FWCfgState *s, uint16_t key, uint32_t value)
+{
+    uint32_t *copy, *old;
+
+    copy = g_malloc(sizeof(value));
+    *copy = cpu_to_le32(value);
+    old = fw_cfg_modify_bytes_read(s, key, copy, sizeof(value));
+    g_free(old);
+}
+
 void fw_cfg_add_i64(FWCfgState *s, uint16_t key, uint64_t value)
 {
     uint64_t *copy;
@@ -728,6 +813,16 @@ void fw_cfg_add_i64(FWCfgState *s, uint16_t key, uint64_t value)
     *copy = cpu_to_le64(value);
     trace_fw_cfg_add_i64(key, trace_key_name(key), value);
     fw_cfg_add_bytes(s, key, copy, sizeof(value));
+}
+
+void fw_cfg_modify_i64(FWCfgState *s, uint16_t key, uint64_t value)
+{
+    uint64_t *copy, *old;
+
+    copy = g_malloc(sizeof(value));
+    *copy = cpu_to_le64(value);
+    old = fw_cfg_modify_bytes_read(s, key, copy, sizeof(value));
+    g_free(old);
 }
 
 void fw_cfg_set_order_override(FWCfgState *s, int order)
@@ -784,6 +879,23 @@ static struct {
 
 #define FW_CFG_ORDER_OVERRIDE_LAST 200
 };
+
+/*
+ * Any sub-page size update to these table MRs will be lost during migration,
+ * as we use aligned size in ram_load_precopy() -> qemu_ram_resize() path.
+ * In order to avoid the inconsistency in sizes save them seperately and
+ * migrate over in vmstate post_load().
+ */
+static void fw_cfg_acpi_mr_save(FWCfgState *s, const char *filename, size_t len)
+{
+    if (!strcmp(filename, ACPI_BUILD_TABLE_FILE)) {
+        s->table_mr_size = len;
+    } else if (!strcmp(filename, ACPI_BUILD_LOADER_FILE)) {
+        s->linker_mr_size = len;
+    } else if (!strcmp(filename, ACPI_BUILD_RSDP_FILE)) {
+        s->rsdp_mr_size = len;
+    }
+}
 
 static int get_fw_cfg_order(FWCfgState *s, const char *name)
 {
@@ -884,6 +996,7 @@ void fw_cfg_add_file_callback(FWCfgState *s,  const char *filename,
     trace_fw_cfg_add_file(s, index, s->files->f[index].name, len);
 
     s->files->count = cpu_to_be32(count+1);
+    fw_cfg_acpi_mr_save(s, filename, len);
 }
 
 void fw_cfg_add_file(FWCfgState *s,  const char *filename,
@@ -907,6 +1020,7 @@ void *fw_cfg_modify_file(FWCfgState *s, const char *filename,
             ptr = fw_cfg_modify_bytes_read(s, FW_CFG_FILE_FIRST + i,
                                            data, len);
             s->files->f[i].size   = cpu_to_be32(len);
+            fw_cfg_acpi_mr_save(s, filename, len);
             return ptr;
         }
     }
@@ -920,13 +1034,21 @@ void *fw_cfg_modify_file(FWCfgState *s, const char *filename,
 
 static void fw_cfg_machine_reset(void *opaque)
 {
+    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
+    FWCfgState *s = opaque;
     void *ptr;
     size_t len;
-    FWCfgState *s = opaque;
-    char *bootindex = get_boot_devices_list(&len);
+    char *buf;
 
-    ptr = fw_cfg_modify_file(s, "bootorder", (uint8_t *)bootindex, len);
+    buf = get_boot_devices_list(&len);
+    ptr = fw_cfg_modify_file(s, "bootorder", (uint8_t *)buf, len);
     g_free(ptr);
+
+    if (!mc->legacy_fw_cfg_order) {
+        buf = get_boot_devices_lchs_list(&len);
+        ptr = fw_cfg_modify_file(s, "bios-geometry", (uint8_t *)buf, len);
+        g_free(ptr);
+    }
 }
 
 static void fw_cfg_machine_ready(struct Notifier *n, void *data)
@@ -935,7 +1057,10 @@ static void fw_cfg_machine_ready(struct Notifier *n, void *data)
     qemu_register_reset(fw_cfg_machine_reset, s);
 }
 
-
+static Property fw_cfg_properties[] = {
+    DEFINE_PROP_BOOL("acpi-mr-restore", FWCfgState, acpi_mr_restore, true),
+    DEFINE_PROP_END_OF_LIST(),
+};
 
 static void fw_cfg_common_realize(DeviceState *dev, Error **errp)
 {
@@ -1059,6 +1184,8 @@ static void fw_cfg_class_init(ObjectClass *klass, void *data)
 
     dc->reset = fw_cfg_reset;
     dc->vmsd = &vmstate_fw_cfg;
+
+    device_class_set_props(dc, fw_cfg_properties);
 }
 
 static const TypeInfo fw_cfg_info = {
@@ -1133,7 +1260,7 @@ static void fw_cfg_io_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = fw_cfg_io_realize;
-    dc->props = fw_cfg_io_properties;
+    device_class_set_props(dc, fw_cfg_io_properties);
 }
 
 static const TypeInfo fw_cfg_io_info = {
@@ -1196,7 +1323,7 @@ static void fw_cfg_mem_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = fw_cfg_mem_realize;
-    dc->props = fw_cfg_mem_properties;
+    device_class_set_props(dc, fw_cfg_mem_properties);
 }
 
 static const TypeInfo fw_cfg_mem_info = {

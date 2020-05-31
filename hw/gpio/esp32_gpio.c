@@ -77,7 +77,7 @@ static void esp32_gpio_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_gpio_reset;
     dc->realize = esp32_gpio_realize;
-    dc->props = esp32_gpio_properties;
+    device_class_set_props(dc, esp32_gpio_properties);
 }
 
 static const TypeInfo esp32_gpio_info = {

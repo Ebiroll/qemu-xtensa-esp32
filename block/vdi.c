@@ -874,7 +874,7 @@ static int coroutine_fn vdi_co_do_create(BlockdevCreateOptions *create_options,
     }
 
     if (image_type == VDI_TYPE_STATIC) {
-        ret = blk_truncate(blk, offset + blocks * block_size,
+        ret = blk_truncate(blk, offset + blocks * block_size, false,
                            PREALLOC_MODE_OFF, errp);
         if (ret < 0) {
             error_prepend(errp, "Failed to statically allocate file");
@@ -896,7 +896,9 @@ static int coroutine_fn vdi_co_create(BlockdevCreateOptions *create_options,
     return vdi_co_do_create(create_options, DEFAULT_CLUSTER_SIZE, errp);
 }
 
-static int coroutine_fn vdi_co_create_opts(const char *filename, QemuOpts *opts,
+static int coroutine_fn vdi_co_create_opts(BlockDriver *drv,
+                                           const char *filename,
+                                           QemuOpts *opts,
                                            Error **errp)
 {
     QDict *qdict = NULL;

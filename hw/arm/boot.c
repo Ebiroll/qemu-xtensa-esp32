@@ -240,6 +240,9 @@ void arm_write_secure_board_setup_dummy_smc(ARMCPU *cpu,
     };
     uint32_t board_setup_blob[] = {
         /* board setup addr */
+        0xee110f51, /* mrc     p15, 0, r0, c1, c1, 2  ;read NSACR */
+        0xe3800b03, /* orr     r0, #0xc00             ;set CP11, CP10 */
+        0xee010f51, /* mcr     p15, 0, r0, c1, c1, 2  ;write NSACR */
         0xe3a00e00 + (mvbar_addr >> 4), /* mov r0, #mvbar_addr */
         0xee0c0f30, /* mcr     p15, 0, r0, c12, c0, 1 ;set MVBAR */
         0xee110f11, /* mrc     p15, 0, r0, c1 , c1, 0 ;read SCR */
@@ -324,8 +327,7 @@ static void set_kernel_args(const struct arm_boot_info *info, AddressSpace *as)
 
         cmdline_size = strlen(info->kernel_cmdline);
         address_space_write(as, p + 8, MEMTXATTRS_UNSPECIFIED,
-                            (const uint8_t *)info->kernel_cmdline,
-                            cmdline_size + 1);
+                            info->kernel_cmdline, cmdline_size + 1);
         cmdline_size = (cmdline_size >> 2) + 1;
         WRITE_WORD(p, cmdline_size + 2);
         WRITE_WORD(p, 0x54410009);
@@ -417,8 +419,7 @@ static void set_kernel_args_old(const struct arm_boot_info *info,
     }
     s = info->kernel_cmdline;
     if (s) {
-        address_space_write(as, p, MEMTXATTRS_UNSPECIFIED,
-                            (const uint8_t *)s, strlen(s) + 1);
+        address_space_write(as, p, MEMTXATTRS_UNSPECIFIED, s, strlen(s) + 1);
     } else {
         WRITE_WORD(p, 0);
     }
@@ -786,6 +787,7 @@ static void do_cpu_reset(void *opaque)
                 info->secondary_cpu_reset_hook(cpu, info);
             }
         }
+        arm_rebuild_hflags(env);
     }
 }
 
@@ -899,7 +901,7 @@ static int64_t arm_load_elf(struct arm_boot_info *info, uint64_t *pentry,
     }
 
     ret = load_elf_as(info->kernel_filename, NULL, NULL, NULL,
-                      pentry, lowaddr, highaddr, big_endian, elf_machine,
+                      pentry, lowaddr, highaddr, NULL, big_endian, elf_machine,
                       1, data_swab, as);
     if (ret <= 0) {
         /* The header loaded but the image didn't */

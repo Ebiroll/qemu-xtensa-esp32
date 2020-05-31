@@ -101,6 +101,10 @@ struct ICSStateClass {
     DeviceClass parent_class;
 
     DeviceRealize parent_realize;
+    DeviceReset parent_reset;
+
+    void (*reject)(ICSState *s, uint32_t irq);
+    void (*resend)(ICSState *s);
 };
 
 struct ICSState {
@@ -161,6 +165,8 @@ void icp_set_mfrr(ICPState *icp, uint8_t mfrr);
 uint32_t icp_accept(ICPState *ss);
 uint32_t icp_ipoll(ICPState *ss, uint32_t *mfrr);
 void icp_eoi(ICPState *icp, uint32_t xirr);
+void icp_irq(ICSState *ics, int server, int nr, uint8_t priority);
+void icp_reset(ICPState *icp);
 
 void ics_write_xive(ICSState *ics, int nr, int server,
                     uint8_t priority, uint8_t saved_priority);
@@ -180,6 +186,7 @@ void icp_resend(ICPState *ss);
 
 Object *icp_create(Object *cpu, const char *type, XICSFabric *xi,
                    Error **errp);
+void icp_destroy(ICPState *icp);
 
 /* KVM */
 void icp_get_kvm_state(ICPState *icp);

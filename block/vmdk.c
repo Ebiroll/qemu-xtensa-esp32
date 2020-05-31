@@ -187,7 +187,7 @@ typedef struct VmdkMetaData {
 typedef struct VmdkGrainMarker {
     uint64_t lba;
     uint32_t size;
-    uint8_t  data[0];
+    uint8_t  data[];
 } QEMU_PACKED VmdkGrainMarker;
 
 enum {
@@ -2076,7 +2076,7 @@ vmdk_co_pwritev_compressed(BlockDriverState *bs, uint64_t offset,
                 return length;
             }
             length = QEMU_ALIGN_UP(length, BDRV_SECTOR_SIZE);
-            ret = bdrv_truncate(s->extents[i].file, length,
+            ret = bdrv_truncate(s->extents[i].file, length, false,
                                 PREALLOC_MODE_OFF, NULL);
             if (ret < 0) {
                 return ret;
@@ -2118,7 +2118,7 @@ static int vmdk_init_extent(BlockBackend *blk,
     int gd_buf_size;
 
     if (flat) {
-        ret = blk_truncate(blk, filesize, PREALLOC_MODE_OFF, errp);
+        ret = blk_truncate(blk, filesize, false, PREALLOC_MODE_OFF, errp);
         goto exit;
     }
     magic = cpu_to_be32(VMDK4_MAGIC);
@@ -2181,7 +2181,7 @@ static int vmdk_init_extent(BlockBackend *blk,
         goto exit;
     }
 
-    ret = blk_truncate(blk, le64_to_cpu(header.grain_offset) << 9,
+    ret = blk_truncate(blk, le64_to_cpu(header.grain_offset) << 9, false,
                        PREALLOC_MODE_OFF, errp);
     if (ret < 0) {
         goto exit;
@@ -2523,7 +2523,7 @@ static int coroutine_fn vmdk_co_do_create(int64_t size,
     /* bdrv_pwrite write padding zeros to align to sector, we don't need that
      * for description file */
     if (desc_offset == 0) {
-        ret = blk_truncate(blk, desc_len, PREALLOC_MODE_OFF, errp);
+        ret = blk_truncate(blk, desc_len, false, PREALLOC_MODE_OFF, errp);
         if (ret < 0) {
             goto exit;
         }
@@ -2588,7 +2588,9 @@ exit:
     return blk;
 }
 
-static int coroutine_fn vmdk_co_create_opts(const char *filename, QemuOpts *opts,
+static int coroutine_fn vmdk_co_create_opts(BlockDriver *drv,
+                                            const char *filename,
+                                            QemuOpts *opts,
                                             Error **errp)
 {
     Error *local_err = NULL;

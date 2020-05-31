@@ -370,7 +370,8 @@ static void raw_refresh_limits(BlockDriverState *bs, Error **errp)
 }
 
 static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
-                                        PreallocMode prealloc, Error **errp)
+                                        bool exact, PreallocMode prealloc,
+                                        Error **errp)
 {
     BDRVRawState *s = bs->opaque;
 
@@ -386,7 +387,7 @@ static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
 
     s->size = offset;
     offset += s->offset;
-    return bdrv_co_truncate(bs->file, offset, prealloc, errp);
+    return bdrv_co_truncate(bs->file, offset, exact, prealloc, errp);
 }
 
 static void raw_eject(BlockDriverState *bs, bool eject_flag)
@@ -418,7 +419,9 @@ static int raw_has_zero_init_truncate(BlockDriverState *bs)
     return bdrv_has_zero_init_truncate(bs->file->bs);
 }
 
-static int coroutine_fn raw_co_create_opts(const char *filename, QemuOpts *opts,
+static int coroutine_fn raw_co_create_opts(BlockDriver *drv,
+                                           const char *filename,
+                                           QemuOpts *opts,
                                            Error **errp)
 {
     return bdrv_create_file(filename, opts, errp);

@@ -21,6 +21,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "cpu.h"
+#include "chardev/char.h"
 #include "qemu/cutils.h"
 #include "qemu/bswap.h"
 #include "sysemu/reset.h"
@@ -39,7 +40,6 @@
 #include "hw/qdev-properties.h"
 #include "hw/block/flash.h"
 #include "hw/hw.h"
-#include "hw/bt.h"
 #include "hw/loader.h"
 #include "hw/sysbus.h"
 #include "qemu/log.h"
@@ -791,13 +791,11 @@ static void n8x0_cbus_setup(struct n800_s *s)
 
 static void n8x0_uart_setup(struct n800_s *s)
 {
-    Chardev *radio = uart_hci_init();
-
-    qdev_connect_gpio_out(s->mpu->gpio, N8X0_BT_RESET_GPIO,
-                    csrhci_pins_get(radio)[csrhci_pin_reset]);
-    qdev_connect_gpio_out(s->mpu->gpio, N8X0_BT_WKUP_GPIO,
-                    csrhci_pins_get(radio)[csrhci_pin_wakeup]);
-
+    Chardev *radio = qemu_chr_new("bt-dummy-uart", "null", NULL);
+    /*
+     * Note: We used to connect N8X0_BT_RESET_GPIO and N8X0_BT_WKUP_GPIO
+     * here, but this code has been removed with the bluetooth backend.
+     */
     omap_uart_attach(s->mpu->uart[BT_UART], radio);
 }
 
@@ -1136,7 +1134,7 @@ static struct omap_partition_info_s {
     { 0, 0, 0, NULL }
 };
 
-static bdaddr_t n8x0_bd_addr = {{ N8X0_BD_ADDR }};
+static uint8_t n8x0_bd_addr[6] = { N8X0_BD_ADDR };
 
 static int n8x0_atag_setup(void *p, int model)
 {
@@ -1311,11 +1309,20 @@ static int n810_atag_setup(const struct arm_boot_info *info, void *p)
 static void n8x0_init(MachineState *machine,
                       struct arm_boot_info *binfo, int model)
 {
-    MemoryRegion *sysmem = get_system_memory();
     struct n800_s *s = (struct n800_s *) g_malloc0(sizeof(*s));
-    int sdram_size = binfo->ram_size;
+    MachineClass *mc = MACHINE_GET_CLASS(machine);
 
-    s->mpu = omap2420_mpu_init(sysmem, sdram_size, machine->cpu_type);
+    if (machine->ram_size != mc->default_ram_size) {
+        char *sz = size_to_str(mc->default_ram_size);
+        error_report("Invalid RAM size, should be %s", sz);
+        g_free(sz);
+        exit(EXIT_FAILURE);
+    }
+
+    memory_region_add_subregion(get_system_memory(), OMAP2_Q2_BASE,
+                                machine->ram);
+
+    s->mpu = omap2420_mpu_init(machine->ram, machine->cpu_type);
 
     /* Setup peripherals
      *
@@ -1381,9 +1388,8 @@ static void n8x0_init(MachineState *machine,
          *
          * The code above is for loading the `zImage' file from Nokia
          * images.  */
-        load_image_targphys(option_rom[0].name,
-                            OMAP2_Q2_BASE + 0x400000,
-                            sdram_size - 0x400000);
+        load_image_targphys(option_rom[0].name, OMAP2_Q2_BASE + 0x400000,
+                            machine->ram_size - 0x400000);
 
         n800_setup_nolo_tags(nolo_tags);
         cpu_physical_memory_write(OMAP2_SRAM_BASE, nolo_tags, 0x10000);
@@ -1393,16 +1399,12 @@ static void n8x0_init(MachineState *machine,
 
 static struct arm_boot_info n800_binfo = {
     .loader_start = OMAP2_Q2_BASE,
-    /* Actually two chips of 0x4000000 bytes each */
-    .ram_size = 0x08000000,
     .board_id = 0x4f7,
     .atag_board = n800_atag_setup,
 };
 
 static struct arm_boot_info n810_binfo = {
     .loader_start = OMAP2_Q2_BASE,
-    /* Actually two chips of 0x4000000 bytes each */
-    .ram_size = 0x08000000,
     /* 0x60c and 0x6bf (WiMAX Edition) have been assigned but are not
      * used by some older versions of the bootloader and 5555 is used
      * instead (including versions that shipped with many devices).  */
@@ -1429,6 +1431,9 @@ static void n800_class_init(ObjectClass *oc, void *data)
     mc->default_boot_order = "";
     mc->ignore_memory_transaction_failures = true;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm1136-r2");
+    /* Actually two chips of 0x4000000 bytes each */
+    mc->default_ram_size = 0x08000000;
+    mc->default_ram_id = "omap2.dram";
 }
 
 static const TypeInfo n800_type = {
@@ -1446,6 +1451,9 @@ static void n810_class_init(ObjectClass *oc, void *data)
     mc->default_boot_order = "";
     mc->ignore_memory_transaction_failures = true;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm1136-r2");
+    /* Actually two chips of 0x4000000 bytes each */
+    mc->default_ram_size = 0x08000000;
+    mc->default_ram_id = "omap2.dram";
 }
 
 static const TypeInfo n810_type = {

@@ -406,5 +406,9 @@
 #define __NR_fsconfig 431
 #define __NR_fsmount 432
 #define __NR_fspick 433
+#define __NR_pidfd_open 434
+#define __NR_clone3 435
+#define __NR_openat2 437
+#define __NR_pidfd_getfd 438
 
 #endif /* _ASM_S390_UNISTD_32_H */

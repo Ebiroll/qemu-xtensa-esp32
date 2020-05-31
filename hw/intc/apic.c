@@ -22,10 +22,10 @@
 #include "hw/i386/apic_internal.h"
 #include "hw/i386/apic.h"
 #include "hw/i386/ioapic.h"
+#include "hw/intc/i8259.h"
 #include "hw/pci/msi.h"
 #include "qemu/host-utils.h"
 #include "trace.h"
-#include "hw/i386/pc.h"
 #include "hw/i386/apic-msidef.h"
 #include "qapi/error.h"
 
@@ -610,7 +610,7 @@ int apic_accept_pic_intr(DeviceState *dev)
 
     if ((s->apicbase & MSR_IA32_APICBASE_ENABLE) == 0 ||
         (lvt0 & APIC_LVT_MASKED) == 0)
-        return 1;
+        return isa_pic != NULL;
 
     return 0;
 }

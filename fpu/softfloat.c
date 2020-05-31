@@ -1920,11 +1920,28 @@ float16 float32_to_float16(float32 a, bool ieee, float_status *s)
     return float16a_round_pack_canonical(pr, s, fmt16);
 }
 
-float64 float32_to_float64(float32 a, float_status *s)
+static float64 QEMU_SOFTFLOAT_ATTR
+soft_float32_to_float64(float32 a, float_status *s)
 {
     FloatParts p = float32_unpack_canonical(a, s);
     FloatParts pr = float_to_float(p, &float64_params, s);
     return float64_round_pack_canonical(pr, s);
+}
+
+float64 float32_to_float64(float32 a, float_status *s)
+{
+    if (likely(float32_is_normal(a))) {
+        /* Widening conversion can never produce inexact results.  */
+        union_float32 uf;
+        union_float64 ud;
+        uf.s = a;
+        ud.h = uf.h;
+        return ud.s;
+    } else if (float32_is_zero(a)) {
+        return float64_set_sign(float64_zero, float32_is_neg(a));
+    } else {
+        return soft_float32_to_float64(a, s);
+    }
 }
 
 float16 float64_to_float16(float64 a, bool ieee, float_status *s)
@@ -5839,6 +5856,9 @@ static floatx80 addFloatx80Sigs(floatx80 a, floatx80 b, flag zSign,
         zSig1 = 0;
         zSig0 = aSig + bSig;
         if ( aExp == 0 ) {
+            if (zSig0 == 0) {
+                return packFloatx80(zSign, 0, 0);
+            }
             normalizeFloatx80Subnormal( zSig0, &zExp, &zSig0 );
             goto roundAndPack;
         }

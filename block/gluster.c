@@ -1130,7 +1130,8 @@ out:
     return ret;
 }
 
-static int coroutine_fn qemu_gluster_co_create_opts(const char *filename,
+static int coroutine_fn qemu_gluster_co_create_opts(BlockDriver *drv,
+                                                    const char *filename,
                                                     QemuOpts *opts,
                                                     Error **errp)
 {
@@ -1225,6 +1226,7 @@ static coroutine_fn int qemu_gluster_co_rw(BlockDriverState *bs,
 
 static coroutine_fn int qemu_gluster_co_truncate(BlockDriverState *bs,
                                                  int64_t offset,
+                                                 bool exact,
                                                  PreallocMode prealloc,
                                                  Error **errp)
 {

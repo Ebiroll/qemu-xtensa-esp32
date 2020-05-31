@@ -34,9 +34,10 @@
 #include "qemu/error-report.h"
 #include "qemu/help_option.h"
 #include "qemu/module.h"
+#include "qemu/plugin.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
-#include "tcg.h"
+#include "tcg/tcg.h"
 #include "qemu/timer.h"
 #include "qemu/envlist.h"
 #include "qemu/guest-random.h"
@@ -58,6 +59,19 @@ static const char *seed_optarg;
 unsigned long mmap_min_addr;
 unsigned long guest_base;
 int have_guest_base;
+
+/*
+ * Used to implement backwards-compatibility for the `-strace`, and
+ * QEMU_STRACE options. Without this, the QEMU_LOG can be overwritten by
+ * -strace, or vice versa.
+ */
+static bool enable_strace;
+
+/*
+ * The last log mask given by the user in an environment variable or argument.
+ * Used to support command line arguments overriding environment variables.
+ */
+static int last_log_mask;
 
 /*
  * When running 32-on-64 we should make sure we can fit all of the possible
@@ -97,15 +111,6 @@ const char *qemu_uname_release;
    we allocate a bigger stack. Need a better solution, for example
    by remapping the process stack directly at the right place */
 unsigned long guest_stack_size = 8 * 1024 * 1024UL;
-
-void gemu_log(const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-}
 
 #if defined(TARGET_I386)
 int cpu_get_pic_interrupt(CPUX86State *env)
@@ -222,15 +227,11 @@ static void handle_arg_help(const char *arg)
 
 static void handle_arg_log(const char *arg)
 {
-    int mask;
-
-    mask = qemu_str_to_log_mask(arg);
-    if (!mask) {
+    last_log_mask = qemu_str_to_log_mask(arg);
+    if (!last_log_mask) {
         qemu_print_log_usage(stdout);
         exit(EXIT_FAILURE);
     }
-    qemu_log_needs_buffers();
-    qemu_set_log(mask);
 }
 
 static void handle_arg_dfilter(const char *arg)
@@ -374,7 +375,7 @@ static void handle_arg_singlestep(const char *arg)
 
 static void handle_arg_strace(const char *arg)
 {
-    do_strace = 1;
+    enable_strace = true;
 }
 
 static void handle_arg_version(const char *arg)
@@ -395,6 +396,15 @@ static void handle_arg_trace(const char *arg)
 static void handle_arg_abi_call0(const char *arg)
 {
     xtensa_set_abi_call0();
+}
+#endif
+
+static QemuPluginList plugins = QTAILQ_HEAD_INITIALIZER(plugins);
+
+#ifdef CONFIG_PLUGIN
+static void handle_arg_plugin(const char *arg)
+{
+    qemu_plugin_opt_parse(arg, &plugins);
 }
 #endif
 
@@ -449,6 +459,10 @@ static const struct qemu_argument arg_table[] = {
      "",           "Seed for pseudo-random number generator"},
     {"trace",      "QEMU_TRACE",       true,  handle_arg_trace,
      "",           "[[enable=]<pattern>][,events=<file>][,file=<file>]"},
+#ifdef CONFIG_PLUGIN
+    {"plugin",     "QEMU_PLUGIN",      true,  handle_arg_plugin,
+     "",           "[file=]<file>[,arg=<string>]"},
+#endif
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
 #if defined(TARGET_XTENSA)
@@ -615,6 +629,7 @@ int main(int argc, char **argv, char **envp)
     int i;
     int ret;
     int execfd;
+    int log_mask;
     unsigned long max_reserved_va;
 
     error_init(argv[0]);
@@ -643,13 +658,23 @@ int main(int argc, char **argv, char **envp)
     cpu_model = NULL;
 
     qemu_add_opts(&qemu_trace_opts);
+    qemu_plugin_add_opts();
 
     optind = parse_args(argc, argv);
+
+    log_mask = last_log_mask | (enable_strace ? LOG_STRACE : 0);
+    if (log_mask) {
+        qemu_log_needs_buffers();
+        qemu_set_log(log_mask);
+    }
 
     if (!trace_init_backends()) {
         exit(1);
     }
     trace_init_file(trace_file);
+    if (qemu_plugin_load_list(&plugins)) {
+        exit(1);
+    }
 
     /* Zero out regs */
     memset(regs, 0, sizeof(struct target_pt_regs));
@@ -808,7 +833,7 @@ int main(int argc, char **argv, char **envp)
 
     if (qemu_loglevel_mask(CPU_LOG_PAGE)) {
         qemu_log("guest_base  0x%lx\n", guest_base);
-        log_page_dump();
+        log_page_dump("binary load");
 
         qemu_log("start_brk   0x" TARGET_ABI_FMT_lx "\n", info->start_brk);
         qemu_log("end_code    0x" TARGET_ABI_FMT_lx "\n", info->end_code);

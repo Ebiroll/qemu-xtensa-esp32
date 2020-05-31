@@ -29,56 +29,10 @@
 #include "qemu/host-utils.h"
 #include "qemu/module.h"
 #include "sysemu/kvm.h"
-#include "hw/virtio/virtio-bus.h"
+#include "hw/virtio/virtio-mmio.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "trace.h"
-
-/* QOM macros */
-/* virtio-mmio-bus */
-#define TYPE_VIRTIO_MMIO_BUS "virtio-mmio-bus"
-#define VIRTIO_MMIO_BUS(obj) \
-        OBJECT_CHECK(VirtioBusState, (obj), TYPE_VIRTIO_MMIO_BUS)
-#define VIRTIO_MMIO_BUS_GET_CLASS(obj) \
-        OBJECT_GET_CLASS(VirtioBusClass, (obj), TYPE_VIRTIO_MMIO_BUS)
-#define VIRTIO_MMIO_BUS_CLASS(klass) \
-        OBJECT_CLASS_CHECK(VirtioBusClass, (klass), TYPE_VIRTIO_MMIO_BUS)
-
-/* virtio-mmio */
-#define TYPE_VIRTIO_MMIO "virtio-mmio"
-#define VIRTIO_MMIO(obj) \
-        OBJECT_CHECK(VirtIOMMIOProxy, (obj), TYPE_VIRTIO_MMIO)
-
-#define VIRT_MAGIC 0x74726976 /* 'virt' */
-#define VIRT_VERSION 2
-#define VIRT_VERSION_LEGACY 1
-#define VIRT_VENDOR 0x554D4551 /* 'QEMU' */
-
-typedef struct VirtIOMMIOQueue {
-    uint16_t num;
-    bool enabled;
-    uint32_t desc[2];
-    uint32_t avail[2];
-    uint32_t used[2];
-} VirtIOMMIOQueue;
-
-typedef struct {
-    /* Generic */
-    SysBusDevice parent_obj;
-    MemoryRegion iomem;
-    qemu_irq irq;
-    bool legacy;
-    /* Guest accessible state needing migration and reset */
-    uint32_t host_features_sel;
-    uint32_t guest_features_sel;
-    uint32_t guest_page_shift;
-    /* virtio-bus */
-    VirtioBusState bus;
-    bool format_transport_address;
-    /* Fields only used for non-legacy (v2) devices */
-    uint32_t guest_features[2];
-    VirtIOMMIOQueue vqs[VIRTIO_QUEUE_MAX];
-} VirtIOMMIOProxy;
 
 static bool virtio_mmio_ioeventfd_enabled(DeviceState *d)
 {
@@ -109,6 +63,19 @@ static void virtio_mmio_start_ioeventfd(VirtIOMMIOProxy *proxy)
 static void virtio_mmio_stop_ioeventfd(VirtIOMMIOProxy *proxy)
 {
     virtio_bus_stop_ioeventfd(&proxy->bus);
+}
+
+static void virtio_mmio_soft_reset(VirtIOMMIOProxy *proxy)
+{
+    int i;
+
+    if (proxy->legacy) {
+        return;
+    }
+
+    for (i = 0; i < VIRTIO_QUEUE_MAX; i++) {
+        proxy->vqs[i].enabled = 0;
+    }
 }
 
 static uint64_t virtio_mmio_read(void *opaque, hwaddr offset, unsigned size)
@@ -341,8 +308,9 @@ static void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
         break;
     case VIRTIO_MMIO_QUEUE_NUM:
         trace_virtio_mmio_queue_write(value, VIRTQUEUE_MAX_SIZE);
+        virtio_queue_set_num(vdev, vdev->queue_sel, value);
+
         if (proxy->legacy) {
-            virtio_queue_set_num(vdev, vdev->queue_sel, value);
             virtio_queue_update_rings(vdev, vdev->queue_sel);
         } else {
             proxy->vqs[vdev->queue_sel].num = value;
@@ -424,6 +392,7 @@ static void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
 
         if (vdev->status == 0) {
             virtio_reset(vdev);
+            virtio_mmio_soft_reset(proxy);
         }
         break;
     case VIRTIO_MMIO_QUEUE_DESC_LOW:
@@ -743,7 +712,7 @@ static void virtio_mmio_class_init(ObjectClass *klass, void *data)
     dc->realize = virtio_mmio_realizefn;
     dc->reset = virtio_mmio_reset;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
-    dc->props = virtio_mmio_properties;
+    device_class_set_props(dc, virtio_mmio_properties);
 }
 
 static const TypeInfo virtio_mmio_info = {

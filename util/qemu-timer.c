@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
 #include "qemu/timer.h"
+#include "qemu/lockable.h"
 #include "sysemu/replay.h"
 #include "sysemu/cpus.h"
 
@@ -186,13 +187,12 @@ bool timerlist_expired(QEMUTimerList *timer_list)
         return false;
     }
 
-    qemu_mutex_lock(&timer_list->active_timers_lock);
-    if (!timer_list->active_timers) {
-        qemu_mutex_unlock(&timer_list->active_timers_lock);
-        return false;
+    WITH_QEMU_LOCK_GUARD(&timer_list->active_timers_lock) {
+        if (!timer_list->active_timers) {
+            return false;
+        }
+        expire_time = timer_list->active_timers->expire_time;
     }
-    expire_time = timer_list->active_timers->expire_time;
-    qemu_mutex_unlock(&timer_list->active_timers_lock);
 
     return expire_time <= qemu_clock_get_ns(timer_list->clock->type);
 }
@@ -225,13 +225,12 @@ int64_t timerlist_deadline_ns(QEMUTimerList *timer_list)
      * value but ->notify_cb() is called when the deadline changes.  Therefore
      * the caller should notice the change and there is no race condition.
      */
-    qemu_mutex_lock(&timer_list->active_timers_lock);
-    if (!timer_list->active_timers) {
-        qemu_mutex_unlock(&timer_list->active_timers_lock);
-        return -1;
+    WITH_QEMU_LOCK_GUARD(&timer_list->active_timers_lock) {
+        if (!timer_list->active_timers) {
+            return -1;
+        }
+        expire_time = timer_list->active_timers->expire_time;
     }
-    expire_time = timer_list->active_timers->expire_time;
-    qemu_mutex_unlock(&timer_list->active_timers_lock);
 
     delta = expire_time - qemu_clock_get_ns(timer_list->clock->type);
 
@@ -322,11 +321,7 @@ int qemu_timeout_ns_to_ms(int64_t ns)
     ms = DIV_ROUND_UP(ns, SCALE_MS);
 
     /* To avoid overflow problems, limit this to 2^31, i.e. approx 25 days */
-    if (ms > (int64_t) INT32_MAX) {
-        ms = INT32_MAX;
-    }
-
-    return (int) ms;
+    return MIN(ms, INT32_MAX);
 }
 
 

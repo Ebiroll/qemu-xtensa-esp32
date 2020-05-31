@@ -16,6 +16,7 @@ config I82378
 config ISA_SUPERIO
     bool
     select ISA_BUS
+    select PCKBD
 
 config PC87312
     bool
@@ -28,6 +29,10 @@ config PC87312
     select PARALLEL
     select FDC
     select IDE_ISA
+
+config PIIX3
+    bool
+    select ISA_BUS
 
 config PIIX4
     bool

@@ -40,6 +40,7 @@ typedef struct AspeedSMCController {
     uint8_t r_ce_ctrl;
     uint8_t r_ctrl0;
     uint8_t r_timings;
+    uint8_t nregs_timings;
     uint8_t conf_enable_w0;
     uint8_t max_slaves;
     const AspeedSegments *segments;
@@ -49,6 +50,10 @@ typedef struct AspeedSMCController {
     hwaddr dma_flash_mask;
     hwaddr dma_dram_mask;
     uint32_t nregs;
+    uint32_t (*segment_to_reg)(const struct AspeedSMCState *s,
+                               const AspeedSegments *seg);
+    void (*reg_to_segment)(const struct AspeedSMCState *s, uint32_t reg,
+                           AspeedSegments *seg);
 } AspeedSMCController;
 
 typedef struct AspeedSMCFlash {

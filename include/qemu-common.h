@@ -13,7 +13,7 @@
 #define TFR(expr) do { if ((expr) != -1) break; } while (errno == EINTR)
 
 /* Copyright string for -version arguments, About dialogs, etc */
-#define QEMU_COPYRIGHT "Copyright (c) 2003-2019 " \
+#define QEMU_COPYRIGHT "Copyright (c) 2003-2020 " \
     "Fabrice Bellard and the QEMU Project developers"
 
 /* Bug reporting information for --help arguments, About dialogs, etc */
@@ -73,6 +73,12 @@ void cpu_exec_step_atomic(CPUState *cpu);
  * choice of page size and the requested page size is smaller than that).
  */
 bool set_preferred_target_page_bits(int bits);
+
+/**
+ * finalize_target_page_bits:
+ * Commit the final value set by set_preferred_target_page_bits.
+ */
+void finalize_target_page_bits(void);
 
 /**
  * Sends a (part of) iovec down a socket, yielding when the socket is full, or

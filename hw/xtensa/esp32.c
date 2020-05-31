@@ -114,6 +114,7 @@ static void esp32_dig_reset(void *opaque, int n, int level)
 {
     Esp32SocState *s = ESP32_SOC(opaque);
     if (level) {
+        esp32_dport_clear_ill_trap_state(&s->dport);
         s->requested_reset = ESP32_SOC_RESET_DIG;
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
     }
@@ -124,6 +125,37 @@ static void esp32_cpu_reset(void* opaque, int n, int level)
     Esp32SocState *s = ESP32_SOC(opaque);
     if (level) {
         s->requested_reset = (n == 0) ? ESP32_SOC_RESET_PROCPU : ESP32_SOC_RESET_APPCPU;
+        /* Use different cause for APP CPU so that its reset doesn't cause QEMU to exit,
+         * when -no-reboot option is given.
+         */
+        ShutdownCause cause = (n == 0) ? SHUTDOWN_CAUSE_GUEST_RESET : SHUTDOWN_CAUSE_SUBSYSTEM_RESET;
+        qemu_system_reset_request(cause);
+    }
+}
+
+static void esp32_timg_cpu_reset(void* opaque, int n, int level)
+{
+    Esp32SocState *s = ESP32_SOC(opaque);
+    if (level) {
+        s->requested_reset = (n == 0) ? ESP32_SOC_RESET_PROCPU : ESP32_SOC_RESET_APPCPU;
+        /* Use different cause for APP CPU so that its reset doesn't cause QEMU to exit,
+         * when -no-reboot option is given.
+         */
+        ShutdownCause cause = (n == 0) ? SHUTDOWN_CAUSE_GUEST_RESET : SHUTDOWN_CAUSE_SUBSYSTEM_RESET;
+        s->rtc_cntl.reset_cause[n] = ESP32_TGWDT_CPU_RESET;
+        qemu_system_reset_request(cause);
+    }
+}
+
+static void esp32_timg_sys_reset(void* opaque, int n, int level)
+{
+    Esp32SocState *s = ESP32_SOC(opaque);
+    if (level) {
+        esp32_dport_clear_ill_trap_state(&s->dport);
+        s->requested_reset = ESP32_SOC_RESET_DIG;
+        for (int i = 0; i < ESP32_CPU_COUNT; ++i) {
+            s->rtc_cntl.reset_cause[i] = ESP32_TG0WDT_SYS_RESET + n;
+        }
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
     }
 }
@@ -142,31 +174,36 @@ static void esp32_soc_reset(DeviceState *dev)
 {
     Esp32SocState *s = ESP32_SOC(dev);
 
+    uint32_t strap_mode = s->gpio.strap_mode;
+
+    bool flash_boot_mode = ((strap_mode & 0x10) || (strap_mode & 0x1f) == 0x0c);
+
     if (s->requested_reset == 0) {
         s->requested_reset = ESP32_SOC_RESET_ALL;
     }
     if (s->requested_reset & ESP32_SOC_RESET_RTC) {
-        device_reset(DEVICE(&s->rtc_cntl));
+        device_cold_reset(DEVICE(&s->rtc_cntl));
     }
     if (s->requested_reset & ESP32_SOC_RESET_PERIPH) {
-        device_reset(DEVICE(&s->dport));
-        device_reset(DEVICE(&s->sha));
-        device_reset(DEVICE(&s->gpio));
+        device_cold_reset(DEVICE(&s->dport));
+        device_cold_reset(DEVICE(&s->sha));
+        device_cold_reset(DEVICE(&s->gpio));
         for (int i = 0; i < ESP32_UART_COUNT; ++i) {
-            device_reset(DEVICE(&s->uart));
+            device_cold_reset(DEVICE(&s->uart));
         }
         for (int i = 0; i < ESP32_FRC_COUNT; ++i) {
-            device_reset(DEVICE(&s->frc_timer[i]));
+            device_cold_reset(DEVICE(&s->frc_timer[i]));
         }
         for (int i = 0; i < ESP32_TIMG_COUNT; ++i) {
-            device_reset(DEVICE(&s->timg[i]));
+            device_cold_reset(DEVICE(&s->timg[i]));
         }
+        s->timg[0].flash_boot_mode = flash_boot_mode;
         for (int i = 0; i < ESP32_SPI_COUNT; ++i) {
-            device_reset(DEVICE(&s->spi[i]));
+            device_cold_reset(DEVICE(&s->spi[i]));
         }
-        device_reset(DEVICE(&s->efuse));
+        device_cold_reset(DEVICE(&s->efuse));
         if (s->eth) {
-            device_reset(s->eth);
+            device_cold_reset(s->eth);
         }
     }
     if (s->requested_reset & ESP32_SOC_RESET_PROCPU) {
@@ -176,7 +213,7 @@ static void esp32_soc_reset(DeviceState *dev)
     }
     if (s->requested_reset & ESP32_SOC_RESET_APPCPU) {
         xtensa_select_static_vectors(&s->cpu[1].env, s->rtc_cntl.stat_vector_sel[1]);
-        remove_cpu_watchpoints(&s->cpu[0]);
+        remove_cpu_watchpoints(&s->cpu[1]);
         cpu_reset(CPU(&s->cpu[1]));
     }
     s->requested_reset = 0;
@@ -190,10 +227,12 @@ static void esp32_cpu_stall(void* opaque, int n, int level)
     if (n == 0) {
         stall = s->rtc_cntl.cpu_stall_state[0];
     } else {
-        stall = s->rtc_cntl.cpu_stall_state[1] && s->dport.appcpu_stall_state;
+        stall = s->rtc_cntl.cpu_stall_state[1] || s->dport.appcpu_stall_state;
     }
 
-    xtensa_runstall(&s->cpu[n].env, stall);
+    if (stall != s->cpu[n].env.runstall) {
+        xtensa_runstall(&s->cpu[n].env, stall);
+    }
 }
 
 static void esp32_clk_update(void* opaque, int n, int level)
@@ -214,6 +253,8 @@ static void esp32_clk_update(void* opaque, int n, int level)
         cpu_clk_freq = apb_clk_freq;
     }
     qdev_prop_set_int32(DEVICE(&s->frc_timer), "apb_freq", apb_clk_freq);
+    qdev_prop_set_int32(DEVICE(&s->timg[0]), "apb_freq", apb_clk_freq);
+    qdev_prop_set_int32(DEVICE(&s->timg[1]), "apb_freq", apb_clk_freq);
     *(uint32_t*)(&s->cpu[0].env.config->clock_freq_khz) = cpu_clk_freq / 1000;
 }
 
@@ -309,8 +350,10 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     if (s->dport.flash_blk) {
         for (int i = 0; i < ESP32_CPU_COUNT; ++i) {
             Esp32CacheRegionState *drom0 = &s->dport.cache_state[i].drom0;
+            memory_region_add_subregion_overlap(&s->cpu_specific_mem[i], drom0->base, &drom0->illegal_access_trap_mem, -2);
             memory_region_add_subregion_overlap(&s->cpu_specific_mem[i], drom0->base, &drom0->mem, -1);
             Esp32CacheRegionState *iram0 = &s->dport.cache_state[i].iram0;
+            memory_region_add_subregion_overlap(&s->cpu_specific_mem[i], iram0->base, &iram0->illegal_access_trap_mem, -2);
             memory_region_add_subregion_overlap(&s->cpu_specific_mem[i], iram0->base, &iram0->mem, -1);
         }
     }
@@ -353,11 +396,26 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     }
 
     for (int i = 0; i < ESP32_TIMG_COUNT; ++i) {
+        s->timg[i].id = i;
+
         const hwaddr timg_base[] = {DR_REG_TIMERGROUP0_BASE, DR_REG_TIMERGROUP1_BASE};
         object_property_set_bool(OBJECT(&s->timg[i]), true, "realized", &error_abort);
 
         esp32_soc_add_periph_device(sys_mem, &s->timg[i], timg_base[i]);
+
+        int timg_level_int[] = { ETS_TG0_T0_LEVEL_INTR_SOURCE, ETS_TG1_T0_LEVEL_INTR_SOURCE };
+        int timg_edge_int[] = { ETS_TG0_T0_EDGE_INTR_SOURCE, ETS_TG1_T0_EDGE_INTR_SOURCE };
+        for (Esp32TimgInterruptType it = TIMG_T0_INT; it < TIMG_INT_MAX; ++it) {
+            sysbus_connect_irq(SYS_BUS_DEVICE(&s->timg[i]), it, qdev_get_gpio_in(intmatrix_dev, timg_level_int[i] + it));
+            sysbus_connect_irq(SYS_BUS_DEVICE(&s->timg[i]), TIMG_INT_MAX + it, qdev_get_gpio_in(intmatrix_dev, timg_edge_int[i] + it));
+        }
+
+        qdev_connect_gpio_out_named(DEVICE(&s->timg[i]), ESP32_TIMG_WDT_CPU_RESET_GPIO, 0,
+                                    qdev_get_gpio_in_named(dev, ESP32_TIMG_WDT_CPU_RESET_GPIO, i));
+        qdev_connect_gpio_out_named(DEVICE(&s->timg[i]), ESP32_TIMG_WDT_SYS_RESET_GPIO, 0,
+                                    qdev_get_gpio_in_named(dev, ESP32_TIMG_WDT_SYS_RESET_GPIO, i));
     }
+    s->timg[0].wdt_en_at_reset = true;
 
     for (int i = 0; i < ESP32_SPI_COUNT; ++i) {
         const hwaddr spi_base[] = {
@@ -475,16 +533,8 @@ static void esp32_soc_init(Object *obj)
     qdev_init_gpio_in_named(DEVICE(s), esp32_cpu_reset, ESP32_RTC_CPU_RESET_GPIO, ESP32_CPU_COUNT);
     qdev_init_gpio_in_named(DEVICE(s), esp32_cpu_stall, ESP32_RTC_CPU_STALL_GPIO, ESP32_CPU_COUNT);
     qdev_init_gpio_in_named(DEVICE(s), esp32_clk_update, ESP32_RTC_CLK_UPDATE_GPIO, 1);
-/*
-    const char *rom_filename = "rom.bin";
-
-    rom_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, rom_filename);
-    if (!rom_filename ||
-        load_image_targphys(rom_filename, 0x40000000, 794624) < 0) { // 412384*
-        error_report("unable to load ROM image '%s'\n", rom_filename);
-        exit(EXIT_FAILURE);
-    }
-*/
+    qdev_init_gpio_in_named(DEVICE(s), esp32_timg_cpu_reset, ESP32_TIMG_WDT_CPU_RESET_GPIO, 2);
+    qdev_init_gpio_in_named(DEVICE(s), esp32_timg_sys_reset, ESP32_TIMG_WDT_SYS_RESET_GPIO, 2);
 }
 
 static Property esp32_soc_properties[] = {
@@ -497,7 +547,7 @@ static void esp32_soc_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_soc_reset;
     dc->realize = esp32_soc_realize;
-    dc->props = esp32_soc_properties;
+    device_class_set_props(dc, esp32_soc_properties);
 }
 
 static const TypeInfo esp32_soc_info = {
@@ -608,7 +658,7 @@ static void esp32_machine_inst_init(MachineState *machine)
         int success = load_elf(load_elf_filename, NULL,
                                translate_phys_addr, &s->cpu[0],
                                &elf_entry, &elf_lowaddr,
-                               NULL, 0, EM_XTENSA, 0, 0);
+                               NULL, NULL, 0, EM_XTENSA, 0, 0);
         if (success > 0) {
             s->cpu[0].env.pc = elf_entry;
         }

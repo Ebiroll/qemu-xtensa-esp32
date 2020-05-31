@@ -330,7 +330,7 @@ static void esp32_spi_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_spi_reset;
     dc->realize = esp32_spi_realize;
-    dc->props = esp32_spi_properties;
+    device_class_set_props(dc, esp32_spi_properties);
 }
 
 static const TypeInfo esp32_spi_info = {

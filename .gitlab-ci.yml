@@ -1,7 +1,0 @@
-build-xtensa-linux:
-  image: $CI_DOCKER_REGISTRY/qemu-build
-  tags:
-    - build_brno
-  script:
-    - ./configure --target-list=xtensa-softmmu --enable-debug --disable-strip --disable-user --disable-capstone --disable-vnc --disable-sdl --disable-gtk
-    - make -j8

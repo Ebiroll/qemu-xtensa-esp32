@@ -24,6 +24,7 @@
 #include "cpu-qom.h"
 #include "hyperv-proto.h"
 #include "exec/cpu-defs.h"
+#include "qapi/qapi-types-common.h"
 
 /* The x86 has a strong memory model with some store-after-load re-ordering */
 #define TCG_GUEST_DEFAULT_MO      (TCG_MO_ALL & ~TCG_MO_ST_LD)
@@ -202,6 +203,7 @@ typedef enum X86Seg {
 #define HF2_SMM_INSIDE_NMI_SHIFT 4 /* CPU serving SMI nested inside NMI */
 #define HF2_MPX_PR_SHIFT         5 /* BNDCFGx.BNDPRESERVE */
 #define HF2_NPT_SHIFT            6 /* Nested Paging enabled */
+#define HF2_IGNNE_SHIFT          7 /* Ignore CR0.NE=0 */
 
 #define HF2_GIF_MASK            (1 << HF2_GIF_SHIFT)
 #define HF2_HIF_MASK            (1 << HF2_HIF_SHIFT)
@@ -210,6 +212,7 @@ typedef enum X86Seg {
 #define HF2_SMM_INSIDE_NMI_MASK (1 << HF2_SMM_INSIDE_NMI_SHIFT)
 #define HF2_MPX_PR_MASK         (1 << HF2_MPX_PR_SHIFT)
 #define HF2_NPT_MASK            (1 << HF2_NPT_SHIFT)
+#define HF2_IGNNE_MASK          (1 << HF2_IGNNE_SHIFT)
 
 #define CR0_PE_SHIFT 0
 #define CR0_MP_SHIFT 1
@@ -345,8 +348,13 @@ typedef enum X86Seg {
 #define MSR_IA32_SPEC_CTRL              0x48
 #define MSR_VIRT_SSBD                   0xc001011f
 #define MSR_IA32_PRED_CMD               0x49
+#define MSR_IA32_UCODE_REV              0x8b
 #define MSR_IA32_CORE_CAPABILITY        0xcf
+
 #define MSR_IA32_ARCH_CAPABILITIES      0x10a
+#define ARCH_CAP_TSX_CTRL_MSR		(1<<7)
+
+#define MSR_IA32_TSX_CTRL		0x122
 #define MSR_IA32_TSCDEADLINE            0x6e0
 
 #define FEATURE_CONTROL_LOCKED                    (1<<0)
@@ -451,6 +459,7 @@ typedef enum X86Seg {
 
 #define MSR_IA32_BNDCFGS                0x00000d90
 #define MSR_IA32_XSS                    0x00000da0
+#define MSR_IA32_UMWAIT_CONTROL         0xe1
 
 #define MSR_IA32_VMX_BASIC              0x00000480
 #define MSR_IA32_VMX_PINBASED_CTLS      0x00000481
@@ -669,65 +678,122 @@ typedef uint64_t FeatureWordArray[FEATURE_WORDS];
 #define CPUID_SVM_PAUSEFILTER  (1U << 10)
 #define CPUID_SVM_PFTHRESHOLD  (1U << 12)
 
-#define CPUID_7_0_EBX_FSGSBASE (1U << 0)
-#define CPUID_7_0_EBX_BMI1     (1U << 3)
-#define CPUID_7_0_EBX_HLE      (1U << 4)
-#define CPUID_7_0_EBX_AVX2     (1U << 5)
-#define CPUID_7_0_EBX_SMEP     (1U << 7)
-#define CPUID_7_0_EBX_BMI2     (1U << 8)
-#define CPUID_7_0_EBX_ERMS     (1U << 9)
-#define CPUID_7_0_EBX_INVPCID  (1U << 10)
-#define CPUID_7_0_EBX_RTM      (1U << 11)
-#define CPUID_7_0_EBX_MPX      (1U << 14)
-#define CPUID_7_0_EBX_AVX512F  (1U << 16) /* AVX-512 Foundation */
-#define CPUID_7_0_EBX_AVX512DQ (1U << 17) /* AVX-512 Doubleword & Quadword Instrs */
-#define CPUID_7_0_EBX_RDSEED   (1U << 18)
-#define CPUID_7_0_EBX_ADX      (1U << 19)
-#define CPUID_7_0_EBX_SMAP     (1U << 20)
-#define CPUID_7_0_EBX_AVX512IFMA (1U << 21) /* AVX-512 Integer Fused Multiply Add */
-#define CPUID_7_0_EBX_PCOMMIT  (1U << 22) /* Persistent Commit */
-#define CPUID_7_0_EBX_CLFLUSHOPT (1U << 23) /* Flush a Cache Line Optimized */
-#define CPUID_7_0_EBX_CLWB     (1U << 24) /* Cache Line Write Back */
-#define CPUID_7_0_EBX_INTEL_PT (1U << 25) /* Intel Processor Trace */
-#define CPUID_7_0_EBX_AVX512PF (1U << 26) /* AVX-512 Prefetch */
-#define CPUID_7_0_EBX_AVX512ER (1U << 27) /* AVX-512 Exponential and Reciprocal */
-#define CPUID_7_0_EBX_AVX512CD (1U << 28) /* AVX-512 Conflict Detection */
-#define CPUID_7_0_EBX_SHA_NI   (1U << 29) /* SHA1/SHA256 Instruction Extensions */
-#define CPUID_7_0_EBX_AVX512BW (1U << 30) /* AVX-512 Byte and Word Instructions */
-#define CPUID_7_0_EBX_AVX512VL (1U << 31) /* AVX-512 Vector Length Extensions */
+/* Support RDFSBASE/RDGSBASE/WRFSBASE/WRGSBASE */
+#define CPUID_7_0_EBX_FSGSBASE          (1U << 0)
+/* 1st Group of Advanced Bit Manipulation Extensions */
+#define CPUID_7_0_EBX_BMI1              (1U << 3)
+/* Hardware Lock Elision */
+#define CPUID_7_0_EBX_HLE               (1U << 4)
+/* Intel Advanced Vector Extensions 2 */
+#define CPUID_7_0_EBX_AVX2              (1U << 5)
+/* Supervisor-mode Execution Prevention */
+#define CPUID_7_0_EBX_SMEP              (1U << 7)
+/* 2nd Group of Advanced Bit Manipulation Extensions */
+#define CPUID_7_0_EBX_BMI2              (1U << 8)
+/* Enhanced REP MOVSB/STOSB */
+#define CPUID_7_0_EBX_ERMS              (1U << 9)
+/* Invalidate Process-Context Identifier */
+#define CPUID_7_0_EBX_INVPCID           (1U << 10)
+/* Restricted Transactional Memory */
+#define CPUID_7_0_EBX_RTM               (1U << 11)
+/* Memory Protection Extension */
+#define CPUID_7_0_EBX_MPX               (1U << 14)
+/* AVX-512 Foundation */
+#define CPUID_7_0_EBX_AVX512F           (1U << 16)
+/* AVX-512 Doubleword & Quadword Instruction */
+#define CPUID_7_0_EBX_AVX512DQ          (1U << 17)
+/* Read Random SEED */
+#define CPUID_7_0_EBX_RDSEED            (1U << 18)
+/* ADCX and ADOX instructions */
+#define CPUID_7_0_EBX_ADX               (1U << 19)
+/* Supervisor Mode Access Prevention */
+#define CPUID_7_0_EBX_SMAP              (1U << 20)
+/* AVX-512 Integer Fused Multiply Add */
+#define CPUID_7_0_EBX_AVX512IFMA        (1U << 21)
+/* Persistent Commit */
+#define CPUID_7_0_EBX_PCOMMIT           (1U << 22)
+/* Flush a Cache Line Optimized */
+#define CPUID_7_0_EBX_CLFLUSHOPT        (1U << 23)
+/* Cache Line Write Back */
+#define CPUID_7_0_EBX_CLWB              (1U << 24)
+/* Intel Processor Trace */
+#define CPUID_7_0_EBX_INTEL_PT          (1U << 25)
+/* AVX-512 Prefetch */
+#define CPUID_7_0_EBX_AVX512PF          (1U << 26)
+/* AVX-512 Exponential and Reciprocal */
+#define CPUID_7_0_EBX_AVX512ER          (1U << 27)
+/* AVX-512 Conflict Detection */
+#define CPUID_7_0_EBX_AVX512CD          (1U << 28)
+/* SHA1/SHA256 Instruction Extensions */
+#define CPUID_7_0_EBX_SHA_NI            (1U << 29)
+/* AVX-512 Byte and Word Instructions */
+#define CPUID_7_0_EBX_AVX512BW          (1U << 30)
+/* AVX-512 Vector Length Extensions */
+#define CPUID_7_0_EBX_AVX512VL          (1U << 31)
 
-#define CPUID_7_0_ECX_AVX512BMI (1U << 1)
-#define CPUID_7_0_ECX_VBMI     (1U << 1)  /* AVX-512 Vector Byte Manipulation Instrs */
-#define CPUID_7_0_ECX_UMIP     (1U << 2)
-#define CPUID_7_0_ECX_PKU      (1U << 3)
-#define CPUID_7_0_ECX_OSPKE    (1U << 4)
-#define CPUID_7_0_ECX_VBMI2    (1U << 6) /* Additional VBMI Instrs */
-#define CPUID_7_0_ECX_GFNI     (1U << 8)
-#define CPUID_7_0_ECX_VAES     (1U << 9)
-#define CPUID_7_0_ECX_VPCLMULQDQ (1U << 10)
-#define CPUID_7_0_ECX_AVX512VNNI (1U << 11)
-#define CPUID_7_0_ECX_AVX512BITALG (1U << 12)
-#define CPUID_7_0_ECX_AVX512_VPOPCNTDQ (1U << 14) /* POPCNT for vectors of DW/QW */
-#define CPUID_7_0_ECX_LA57     (1U << 16)
-#define CPUID_7_0_ECX_RDPID    (1U << 22)
-#define CPUID_7_0_ECX_CLDEMOTE (1U << 25)  /* CLDEMOTE Instruction */
-#define CPUID_7_0_ECX_MOVDIRI  (1U << 27)  /* MOVDIRI Instruction */
-#define CPUID_7_0_ECX_MOVDIR64B (1U << 28) /* MOVDIR64B Instruction */
+/* AVX-512 Vector Byte Manipulation Instruction */
+#define CPUID_7_0_ECX_AVX512_VBMI       (1U << 1)
+/* User-Mode Instruction Prevention */
+#define CPUID_7_0_ECX_UMIP              (1U << 2)
+/* Protection Keys for User-mode Pages */
+#define CPUID_7_0_ECX_PKU               (1U << 3)
+/* OS Enable Protection Keys */
+#define CPUID_7_0_ECX_OSPKE             (1U << 4)
+/* UMONITOR/UMWAIT/TPAUSE Instructions */
+#define CPUID_7_0_ECX_WAITPKG           (1U << 5)
+/* Additional AVX-512 Vector Byte Manipulation Instruction */
+#define CPUID_7_0_ECX_AVX512_VBMI2      (1U << 6)
+/* Galois Field New Instructions */
+#define CPUID_7_0_ECX_GFNI              (1U << 8)
+/* Vector AES Instructions */
+#define CPUID_7_0_ECX_VAES              (1U << 9)
+/* Carry-Less Multiplication Quadword */
+#define CPUID_7_0_ECX_VPCLMULQDQ        (1U << 10)
+/* Vector Neural Network Instructions */
+#define CPUID_7_0_ECX_AVX512VNNI        (1U << 11)
+/* Support for VPOPCNT[B,W] and VPSHUFBITQMB */
+#define CPUID_7_0_ECX_AVX512BITALG      (1U << 12)
+/* POPCNT for vectors of DW/QW */
+#define CPUID_7_0_ECX_AVX512_VPOPCNTDQ  (1U << 14)
+/* 5-level Page Tables */
+#define CPUID_7_0_ECX_LA57              (1U << 16)
+/* Read Processor ID */
+#define CPUID_7_0_ECX_RDPID             (1U << 22)
+/* Cache Line Demote Instruction */
+#define CPUID_7_0_ECX_CLDEMOTE          (1U << 25)
+/* Move Doubleword as Direct Store Instruction */
+#define CPUID_7_0_ECX_MOVDIRI           (1U << 27)
+/* Move 64 Bytes as Direct Store Instruction */
+#define CPUID_7_0_ECX_MOVDIR64B         (1U << 28)
 
-#define CPUID_7_0_EDX_AVX512_4VNNIW (1U << 2) /* AVX512 Neural Network Instructions */
-#define CPUID_7_0_EDX_AVX512_4FMAPS (1U << 3) /* AVX512 Multiply Accumulation Single Precision */
-#define CPUID_7_0_EDX_SPEC_CTRL     (1U << 26) /* Speculation Control */
-#define CPUID_7_0_EDX_ARCH_CAPABILITIES (1U << 29)  /*Arch Capabilities*/
-#define CPUID_7_0_EDX_CORE_CAPABILITY   (1U << 30)  /*Core Capability*/
-#define CPUID_7_0_EDX_SPEC_CTRL_SSBD  (1U << 31) /* Speculative Store Bypass Disable */
+/* AVX512 Neural Network Instructions */
+#define CPUID_7_0_EDX_AVX512_4VNNIW     (1U << 2)
+/* AVX512 Multiply Accumulation Single Precision */
+#define CPUID_7_0_EDX_AVX512_4FMAPS     (1U << 3)
+/* Speculation Control */
+#define CPUID_7_0_EDX_SPEC_CTRL         (1U << 26)
+/* Single Thread Indirect Branch Predictors */
+#define CPUID_7_0_EDX_STIBP             (1U << 27)
+/* Arch Capabilities */
+#define CPUID_7_0_EDX_ARCH_CAPABILITIES (1U << 29)
+/* Core Capability */
+#define CPUID_7_0_EDX_CORE_CAPABILITY   (1U << 30)
+/* Speculative Store Bypass Disable */
+#define CPUID_7_0_EDX_SPEC_CTRL_SSBD    (1U << 31)
 
-#define CPUID_7_1_EAX_AVX512_BF16 (1U << 5) /* AVX512 BFloat16 Instruction */
+/* AVX512 BFloat16 Instruction */
+#define CPUID_7_1_EAX_AVX512_BF16       (1U << 5)
 
-#define CPUID_8000_0008_EBX_CLZERO		(1U << 0) /* CLZERO instruction */
-#define CPUID_8000_0008_EBX_XSAVEERPTR	(1U << 2) /* Always save/restore FP error pointers */
-#define CPUID_8000_0008_EBX_WBNOINVD  (1U << 9)  /* Write back and
-                                                                             do not invalidate cache */
-#define CPUID_8000_0008_EBX_IBPB    (1U << 12) /* Indirect Branch Prediction Barrier */
+/* CLZERO instruction */
+#define CPUID_8000_0008_EBX_CLZERO      (1U << 0)
+/* Always save/restore FP error pointers */
+#define CPUID_8000_0008_EBX_XSAVEERPTR  (1U << 2)
+/* Write back and do not invalidate cache */
+#define CPUID_8000_0008_EBX_WBNOINVD    (1U << 9)
+/* Indirect Branch Prediction Barrier */
+#define CPUID_8000_0008_EBX_IBPB        (1U << 12)
+/* Single Thread Indirect Branch Predictors */
+#define CPUID_8000_0008_EBX_STIBP       (1U << 15)
 
 #define CPUID_XSAVE_XSAVEOPT   (1U << 0)
 #define CPUID_XSAVE_XSAVEC     (1U << 1)
@@ -772,11 +838,15 @@ typedef uint64_t FeatureWordArray[FEATURE_WORDS];
 #define CPUID_TOPOLOGY_LEVEL_DIE      (5U << 8)
 
 /* MSR Feature Bits */
-#define MSR_ARCH_CAP_RDCL_NO    (1U << 0)
-#define MSR_ARCH_CAP_IBRS_ALL   (1U << 1)
-#define MSR_ARCH_CAP_RSBA       (1U << 2)
+#define MSR_ARCH_CAP_RDCL_NO            (1U << 0)
+#define MSR_ARCH_CAP_IBRS_ALL           (1U << 1)
+#define MSR_ARCH_CAP_RSBA               (1U << 2)
 #define MSR_ARCH_CAP_SKIP_L1DFL_VMENTRY (1U << 3)
-#define MSR_ARCH_CAP_SSB_NO     (1U << 4)
+#define MSR_ARCH_CAP_SSB_NO             (1U << 4)
+#define MSR_ARCH_CAP_MDS_NO             (1U << 5)
+#define MSR_ARCH_CAP_PSCHANGE_MC_NO     (1U << 6)
+#define MSR_ARCH_CAP_TSX_CTRL_MSR       (1U << 7)
+#define MSR_ARCH_CAP_TAA_NO             (1U << 8)
 
 #define MSR_CORE_CAP_SPLIT_LOCK_DETECT  (1U << 5)
 
@@ -931,9 +1001,9 @@ typedef uint64_t FeatureWordArray[FEATURE_WORDS];
 #define EXCP11_ALGN	17
 #define EXCP12_MCHK	18
 
-#define EXCP_SYSCALL    0x100 /* only happens in user only emulation
-                                 for syscall instruction */
-#define EXCP_VMEXIT     0x100
+#define EXCP_VMEXIT     0x100 /* only for system emulation */
+#define EXCP_SYSCALL    0x101 /* only for user emulation */
+#define EXCP_VSYSCALL   0x102 /* only for user emulation */
 
 /* i386-specific interrupt pending bits.  */
 #define CPU_INTERRUPT_POLL      CPU_INTERRUPT_TGT_EXT_1
@@ -1392,6 +1462,7 @@ typedef struct CPUX86State {
     uint64_t msr_smi_count;
 
     uint32_t pkru;
+    uint32_t tsx_ctrl;
 
     uint64_t spec_ctrl;
     uint64_t virt_ssbd;
@@ -1533,10 +1604,13 @@ typedef struct CPUX86State {
     uint16_t fpregs_format_vmstate;
 
     uint64_t xss;
+    uint32_t umwait;
 
     TPRAccess tpr_access_type;
 
     unsigned nr_dies;
+    unsigned nr_nodes;
+    unsigned pkg_offset;
 } CPUX86State;
 
 struct kvm_msrs;
@@ -1558,11 +1632,14 @@ struct X86CPU {
     CPUNegativeOffsetState neg;
     CPUX86State env;
 
+    uint64_t ucode_rev;
+
     uint32_t hyperv_spinlock_attempts;
     char *hyperv_vendor_id;
     bool hyperv_synic_kvm_only;
     uint64_t hyperv_features;
     bool hyperv_passthrough;
+    OnOffAuto hyperv_no_nonarch_cs;
 
     bool check_cpuid;
     bool enforce_cpuid;
@@ -1693,7 +1770,7 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags);
 hwaddr x86_cpu_get_phys_page_attrs_debug(CPUState *cpu, vaddr addr,
                                          MemTxAttrs *attrs);
 
-int x86_cpu_gdb_read_register(CPUState *cpu, uint8_t *buf, int reg);
+int x86_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int x86_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
 
 void x86_cpu_exec_enter(CPUState *cpu);
@@ -1704,7 +1781,8 @@ int cpu_x86_support_mca_broadcast(CPUX86State *env);
 
 int cpu_get_pic_interrupt(CPUX86State *s);
 /* MSDOS compatibility mode FPU exception support */
-void cpu_set_ferr(CPUX86State *s);
+void x86_register_ferr_irq(qemu_irq irq);
+void cpu_set_ignne(void);
 /* mpx_helper.c */
 void cpu_sync_bndcs_hflags(CPUX86State *env);
 
@@ -1820,6 +1898,7 @@ void cpu_clear_apic_feature(CPUX86State *env);
 void host_cpuid(uint32_t function, uint32_t count,
                 uint32_t *eax, uint32_t *ebx, uint32_t *ecx, uint32_t *edx);
 void host_vendor_fms(char *vendor, int *family, int *model, int *stepping);
+bool cpu_x86_use_epyc_apic_id_encoding(const char *cpu_type);
 
 /* helper.c */
 bool x86_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
@@ -1884,9 +1963,6 @@ uint64_t cpu_get_tsc(CPUX86State *env);
 #define cpu_list x86_cpu_list
 
 /* MMU modes definitions */
-#define MMU_MODE0_SUFFIX _ksmap
-#define MMU_MODE1_SUFFIX _user
-#define MMU_MODE2_SUFFIX _knosmap /* SMAP disabled or CPL<3 && AC=1 */
 #define MMU_KSMAP_IDX   0
 #define MMU_USER_IDX    1
 #define MMU_KNOSMAP_IDX 2
@@ -2144,5 +2220,11 @@ static inline bool hyperv_feat_enabled(X86CPU *cpu, int feat)
 {
     return !!(cpu->hyperv_features & BIT(feat));
 }
+
+#if defined(TARGET_X86_64) && \
+    defined(CONFIG_USER_ONLY) && \
+    defined(CONFIG_LINUX)
+# define TARGET_VSYSCALL_PAGE  (UINT64_C(-10) << 20)
+#endif
 
 #endif /* I386_CPU_H */

@@ -226,7 +226,7 @@ static void esp32_frc_timer_class_init(ObjectClass *klass, void *data)
 
     dc->reset = esp32_frc_timer_reset;
     dc->realize = esp32_frc_timer_realize;
-    dc->props = esp32_frc_timer_properties;
+    device_class_set_props(dc, esp32_frc_timer_properties);
 }
 
 static const TypeInfo esp32_frc_timer_info = {

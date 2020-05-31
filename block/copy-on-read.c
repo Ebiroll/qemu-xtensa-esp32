@@ -73,13 +73,6 @@ static int64_t cor_getlength(BlockDriverState *bs)
 }
 
 
-static int coroutine_fn cor_co_truncate(BlockDriverState *bs, int64_t offset,
-                                        PreallocMode prealloc, Error **errp)
-{
-    return bdrv_co_truncate(bs->file, offset, prealloc, errp);
-}
-
-
 static int coroutine_fn cor_co_preadv(BlockDriverState *bs,
                                       uint64_t offset, uint64_t bytes,
                                       QEMUIOVector *qiov, int flags)
@@ -125,13 +118,6 @@ static void cor_lock_medium(BlockDriverState *bs, bool locked)
 }
 
 
-static bool cor_recurse_is_first_non_filter(BlockDriverState *bs,
-                                            BlockDriverState *candidate)
-{
-    return bdrv_recurse_is_first_non_filter(bs->file->bs, candidate);
-}
-
-
 static BlockDriver bdrv_copy_on_read = {
     .format_name                        = "copy-on-read",
 
@@ -139,7 +125,6 @@ static BlockDriver bdrv_copy_on_read = {
     .bdrv_child_perm                    = cor_child_perm,
 
     .bdrv_getlength                     = cor_getlength,
-    .bdrv_co_truncate                   = cor_co_truncate,
 
     .bdrv_co_preadv                     = cor_co_preadv,
     .bdrv_co_pwritev                    = cor_co_pwritev,
@@ -150,8 +135,6 @@ static BlockDriver bdrv_copy_on_read = {
     .bdrv_lock_medium                   = cor_lock_medium,
 
     .bdrv_co_block_status               = bdrv_co_block_status_from_file,
-
-    .bdrv_recurse_is_first_non_filter   = cor_recurse_is_first_non_filter,
 
     .has_variable_length                = true,
     .is_filter                          = true,

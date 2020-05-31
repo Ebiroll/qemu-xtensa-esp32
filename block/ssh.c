@@ -963,7 +963,9 @@ fail:
     return ret;
 }
 
-static int coroutine_fn ssh_co_create_opts(const char *filename, QemuOpts *opts,
+static int coroutine_fn ssh_co_create_opts(BlockDriver *drv,
+                                           const char *filename,
+                                           QemuOpts *opts,
                                            Error **errp)
 {
     BlockdevCreateOptions *create_options;
@@ -1295,7 +1297,8 @@ static int64_t ssh_getlength(BlockDriverState *bs)
 }
 
 static int coroutine_fn ssh_co_truncate(BlockDriverState *bs, int64_t offset,
-                                        PreallocMode prealloc, Error **errp)
+                                        bool exact, PreallocMode prealloc,
+                                        Error **errp)
 {
     BDRVSSHState *s = bs->opaque;
 

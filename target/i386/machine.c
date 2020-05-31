@@ -1,10 +1,10 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
-#include "hw/i386/pc.h"
 #include "hw/isa/isa.h"
 #include "migration/cpu.h"
 #include "hyperv.h"
+#include "hw/i386/x86.h"
 #include "kvm_i386.h"
 
 #include "sysemu/kvm.h"
@@ -261,7 +261,7 @@ static int cpu_pre_save(void *opaque)
      * intercepted anymore.
      *
      * Furthermore, when a L2 exception is intercepted by L1
-     * hypervisor, it's exception payload (CR2/DR6 on #PF/#DB)
+     * hypervisor, its exception payload (CR2/DR6 on #PF/#DB)
      * should not be set yet in the respective vCPU register.
      * Thus, in case an exception is pending, it is
      * important to save the exception payload seperately.
@@ -271,9 +271,9 @@ static int cpu_pre_save(void *opaque)
      * distinguish between a pending and injected exception
      * and we don't need to store seperately the exception payload.
      *
-     * In order to preserve better backwards-compatabile migration,
+     * In order to preserve better backwards-compatible migration,
      * convert a pending exception to an injected exception in
-     * case it is not important to distingiush between them
+     * case it is not important to distinguish between them
      * as described above.
      */
     if (env->exception_pending && !(env->hflags & HF_GUEST_MASK)) {
@@ -415,7 +415,7 @@ static bool exception_info_needed(void *opaque)
 
     /*
      * It is important to save exception-info only in case
-     * we need to distingiush between a pending and injected
+     * we need to distinguish between a pending and injected
      * exception. Which is only required in case there is a
      * pending exception and vCPU is running L2.
      * For more info, refer to comment in cpu_pre_save().
@@ -943,6 +943,25 @@ static const VMStateDescription vmstate_xss = {
     }
 };
 
+static bool umwait_needed(void *opaque)
+{
+    X86CPU *cpu = opaque;
+    CPUX86State *env = &cpu->env;
+
+    return env->umwait != 0;
+}
+
+static const VMStateDescription vmstate_umwait = {
+    .name = "cpu/umwait",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = umwait_needed,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(env.umwait, X86CPU),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 #ifdef TARGET_X86_64
 static bool pkru_needed(void *opaque)
 {
@@ -969,8 +988,8 @@ static bool tsc_khz_needed(void *opaque)
     X86CPU *cpu = opaque;
     CPUX86State *env = &cpu->env;
     MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
-    PCMachineClass *pcmc = PC_MACHINE_CLASS(mc);
-    return env->tsc_khz && pcmc->save_tsc_khz;
+    X86MachineClass *x86mc = X86_MACHINE_CLASS(mc);
+    return env->tsc_khz && x86mc->save_tsc_khz;
 }
 
 static const VMStateDescription vmstate_tsc_khz = {
@@ -1274,6 +1293,25 @@ static const VMStateDescription vmstate_efer32 = {
 };
 #endif
 
+static bool msr_tsx_ctrl_needed(void *opaque)
+{
+    X86CPU *cpu = opaque;
+    CPUX86State *env = &cpu->env;
+
+    return env->features[FEAT_ARCH_CAPABILITIES] & ARCH_CAP_TSX_CTRL_MSR;
+}
+
+static const VMStateDescription vmstate_msr_tsx_ctrl = {
+    .name = "cpu/msr_tsx_ctrl",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = msr_tsx_ctrl_needed,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(env.tsx_ctrl, X86CPU),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 VMStateDescription vmstate_x86_cpu = {
     .name = "cpu",
     .version_id = 12,
@@ -1391,6 +1429,7 @@ VMStateDescription vmstate_x86_cpu = {
         &vmstate_msr_hyperv_reenlightenment,
         &vmstate_avx512,
         &vmstate_xss,
+        &vmstate_umwait,
         &vmstate_tsc_khz,
         &vmstate_msr_smi_count,
 #ifdef TARGET_X86_64
@@ -1407,6 +1446,7 @@ VMStateDescription vmstate_x86_cpu = {
 #ifdef CONFIG_KVM
         &vmstate_nested_state,
 #endif
+        &vmstate_msr_tsx_ctrl,
         NULL
     }
 };

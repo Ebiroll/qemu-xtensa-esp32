@@ -1663,6 +1663,7 @@ static void spapr_pci_unplug_request(HotplugHandler *plug_handler,
 
         if (pc->is_bridge) {
             error_setg(errp, "PCI: Hot unplug of PCI bridges not supported");
+            return;
         }
 
         /* ensure any other present functions are pending unplug */
@@ -1942,7 +1943,7 @@ static void spapr_phb_realize(DeviceState *dev, Error **errp)
      * our memory slot is of page size granularity.
      */
     if (kvm_enabled()) {
-        msi_window_size = getpagesize();
+        msi_window_size = qemu_real_host_page_size;
     }
 
     memory_region_init_io(&sphb->msiwindow, OBJECT(sphb), &spapr_msi_ops, spapr,
@@ -2014,7 +2015,7 @@ static int spapr_phb_children_reset(Object *child, void *opaque)
     DeviceState *dev = (DeviceState *) object_dynamic_cast(child, TYPE_DEVICE);
 
     if (dev) {
-        device_reset(dev);
+        device_legacy_reset(dev);
     }
 
     return 0;
@@ -2042,13 +2043,13 @@ void spapr_phb_dma_reset(SpaprPhbState *sphb)
 static void spapr_phb_reset(DeviceState *qdev)
 {
     SpaprPhbState *sphb = SPAPR_PCI_HOST_BRIDGE(qdev);
-    Error *errp = NULL;
+    Error *err = NULL;
 
     spapr_phb_dma_reset(sphb);
     spapr_phb_nvgpu_free(sphb);
-    spapr_phb_nvgpu_setup(sphb, &errp);
-    if (errp) {
-        error_report_err(errp);
+    spapr_phb_nvgpu_setup(sphb, &err);
+    if (err) {
+        error_report_err(err);
     }
 
     /* Reset the IOMMU state */
@@ -2217,7 +2218,7 @@ static void spapr_phb_class_init(ObjectClass *klass, void *data)
     hc->root_bus_path = spapr_phb_root_bus_path;
     dc->realize = spapr_phb_realize;
     dc->unrealize = spapr_phb_unrealize;
-    dc->props = spapr_phb_properties;
+    device_class_set_props(dc, spapr_phb_properties);
     dc->reset = spapr_phb_reset;
     dc->vmsd = &vmstate_spapr_pci;
     /* Supported by TYPE_SPAPR_MACHINE */
@@ -2277,8 +2278,8 @@ static void spapr_phb_pci_enumerate(SpaprPhbState *phb)
 
 }
 
-int spapr_dt_phb(SpaprPhbState *phb, uint32_t intc_phandle, void *fdt,
-                 uint32_t nr_msis, int *node_offset)
+int spapr_dt_phb(SpaprMachineState *spapr, SpaprPhbState *phb,
+                 uint32_t intc_phandle, void *fdt, int *node_offset)
 {
     int bus_off, i, j, ret;
     uint32_t bus_range[] = { cpu_to_be32(0), cpu_to_be32(0xff) };
@@ -2326,7 +2327,7 @@ int spapr_dt_phb(SpaprPhbState *phb, uint32_t intc_phandle, void *fdt,
                                 cpu_to_be32(phb->numa_node)};
     SpaprTceTable *tcet;
     SpaprDrc *drc;
-    Error *errp = NULL;
+    Error *err = NULL;
 
     /* Start populating the FDT */
     _FDT(bus_off = fdt_add_subnode(fdt, 0, phb->dtbusname));
@@ -2343,7 +2344,8 @@ int spapr_dt_phb(SpaprPhbState *phb, uint32_t intc_phandle, void *fdt,
     _FDT(fdt_setprop(fdt, bus_off, "ranges", &ranges, sizeof_ranges));
     _FDT(fdt_setprop(fdt, bus_off, "reg", &bus_reg, sizeof(bus_reg)));
     _FDT(fdt_setprop_cell(fdt, bus_off, "ibm,pci-config-space-type", 0x1));
-    _FDT(fdt_setprop_cell(fdt, bus_off, "ibm,pe-total-#msi", nr_msis));
+    _FDT(fdt_setprop_cell(fdt, bus_off, "ibm,pe-total-#msi",
+                          spapr_irq_nr_msis(spapr)));
 
     /* Dynamic DMA window */
     if (phb->ddw_enabled) {
@@ -2407,9 +2409,9 @@ int spapr_dt_phb(SpaprPhbState *phb, uint32_t intc_phandle, void *fdt,
         return ret;
     }
 
-    spapr_phb_nvgpu_populate_dt(phb, fdt, bus_off, &errp);
-    if (errp) {
-        error_report_err(errp);
+    spapr_phb_nvgpu_populate_dt(phb, fdt, bus_off, &err);
+    if (err) {
+        error_report_err(err);
     }
     spapr_phb_nvgpu_ram_populate_dt(phb, fdt);
 

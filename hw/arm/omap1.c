@@ -23,6 +23,7 @@
 #include "qapi/error.h"
 #include "qemu-common.h"
 #include "cpu.h"
+#include "exec/address-spaces.h"
 #include "hw/boards.h"
 #include "hw/hw.h"
 #include "hw/irq.h"
@@ -3858,8 +3859,7 @@ static int omap_validate_tipb_mpui_addr(struct omap_mpu_state_s *s,
     return range_covers_byte(0xe1010000, 0xe1020004 - 0xe1010000, addr);
 }
 
-struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
-                unsigned long sdram_size,
+struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *dram,
                 const char *cpu_type)
 {
     int i;
@@ -3867,11 +3867,12 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
     qemu_irq dma_irqs[6];
     DriveInfo *dinfo;
     SysBusDevice *busdev;
+    MemoryRegion *system_memory = get_system_memory();
 
     /* Core */
     s->mpu_model = omap310;
     s->cpu = ARM_CPU(cpu_create(cpu_type));
-    s->sdram_size = sdram_size;
+    s->sdram_size = memory_region_size(dram);
     s->sram_size = OMAP15XX_SRAM_SIZE;
 
     s->wakeup = qemu_allocate_irq(omap_mpu_wakeup, s, 0);
@@ -3880,9 +3881,6 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
     omap_clk_init(s);
 
     /* Memory-mapped stuff */
-    memory_region_allocate_system_memory(&s->emiff_ram, NULL, "omap1.dram",
-                                         s->sdram_size);
-    memory_region_add_subregion(system_memory, OMAP_EMIFF_BASE, &s->emiff_ram);
     memory_region_init_ram(&s->imif_ram, NULL, "omap1.sram", s->sram_size,
                            &error_fatal);
     memory_region_add_subregion(system_memory, OMAP_IMIF_BASE, &s->imif_ram);
@@ -3891,7 +3889,7 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
 
     s->ih[0] = qdev_create(NULL, "omap-intc");
     qdev_prop_set_uint32(s->ih[0], "size", 0x100);
-    qdev_prop_set_ptr(s->ih[0], "clk", omap_findclk(s, "arminth_ck"));
+    omap_intc_set_iclk(OMAP_INTC(s->ih[0]), omap_findclk(s, "arminth_ck"));
     qdev_init_nofail(s->ih[0]);
     busdev = SYS_BUS_DEVICE(s->ih[0]);
     sysbus_connect_irq(busdev, 0,
@@ -3901,7 +3899,7 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
     sysbus_mmio_map(busdev, 0, 0xfffecb00);
     s->ih[1] = qdev_create(NULL, "omap-intc");
     qdev_prop_set_uint32(s->ih[1], "size", 0x800);
-    qdev_prop_set_ptr(s->ih[1], "clk", omap_findclk(s, "arminth_ck"));
+    omap_intc_set_iclk(OMAP_INTC(s->ih[1]), omap_findclk(s, "arminth_ck"));
     qdev_init_nofail(s->ih[1]);
     busdev = SYS_BUS_DEVICE(s->ih[1]);
     sysbus_connect_irq(busdev, 0,
@@ -3925,7 +3923,7 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
     s->port[tipb_mpui].addr_valid = omap_validate_tipb_mpui_addr;
 
     /* Register SDRAM and SRAM DMA ports for fast transfers.  */
-    soc_dma_port_add_mem(s->dma, memory_region_get_ram_ptr(&s->emiff_ram),
+    soc_dma_port_add_mem(s->dma, memory_region_get_ram_ptr(dram),
                          OMAP_EMIFF_BASE, s->sdram_size);
     soc_dma_port_add_mem(s->dma, memory_region_get_ram_ptr(&s->imif_ram),
                          OMAP_IMIF_BASE, s->sram_size);
@@ -4014,7 +4012,7 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
 
     s->gpio = qdev_create(NULL, "omap-gpio");
     qdev_prop_set_int32(s->gpio, "mpu_model", s->mpu_model);
-    qdev_prop_set_ptr(s->gpio, "clk", omap_findclk(s, "arm_gpio_ck"));
+    omap_gpio_set_clk(OMAP1_GPIO(s->gpio), omap_findclk(s, "arm_gpio_ck"));
     qdev_init_nofail(s->gpio);
     sysbus_connect_irq(SYS_BUS_DEVICE(s->gpio), 0,
                        qdev_get_gpio_in(s->ih[0], OMAP_INT_GPIO_BANK1));
@@ -4032,7 +4030,7 @@ struct omap_mpu_state_s *omap310_mpu_init(MemoryRegion *system_memory,
 
     s->i2c[0] = qdev_create(NULL, "omap_i2c");
     qdev_prop_set_uint8(s->i2c[0], "revision", 0x11);
-    qdev_prop_set_ptr(s->i2c[0], "fclk", omap_findclk(s, "mpuper_ck"));
+    omap_i2c_set_fclk(OMAP_I2C(s->i2c[0]), omap_findclk(s, "mpuper_ck"));
     qdev_init_nofail(s->i2c[0]);
     busdev = SYS_BUS_DEVICE(s->i2c[0]);
     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(s->ih[1], OMAP_INT_I2C));

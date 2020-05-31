@@ -60,6 +60,13 @@
 
 #define sizeof_field(type, field) sizeof(((type *)0)->field)
 
+/*
+ * Calculate the number of bytes up to and including the given 'field' of
+ * 'container'.
+ */
+#define endof(container, field) \
+    (offsetof(container, field) + sizeof_field(container, field))
+
 /* Convert from a base type to a parent type, with compile time checking.  */
 #ifdef __GNUC__
 #define DO_UPCAST(type, field, dev) ( __extension__ ( { \
@@ -229,7 +236,7 @@
  * supports QEMU_ERROR, this will be reported at compile time; otherwise
  * this will be reported at link time due to the missing symbol.
  */
-#ifdef __OPTIMIZE__
+#if defined(__OPTIMIZE__) && !defined(__NO_INLINE__)
 extern void QEMU_NORETURN QEMU_ERROR("code path is reachable")
     qemu_build_not_reached(void);
 #else
