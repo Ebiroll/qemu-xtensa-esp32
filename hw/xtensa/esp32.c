@@ -3461,13 +3461,15 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                printf("   Can't open 'rom.bin' for reading.\n");
 	        } else {
                 rom_data=(unsigned char *)malloc(0xC2000*sizeof(unsigned int));
-                if (fread(rom_data,0x60000*sizeof(unsigned char),1,f_rom)<1) {
+                if (fread(rom_data,0x70000*sizeof(unsigned char),1,f_rom)<1) {
                    printf(" File 'rom.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x40000000, rom_data, 0x60000*sizeof(unsigned char));
+                cpu_physical_memory_write(0x40000000, rom_data, 0x70000*sizeof(unsigned char));
+                cpu_physical_memory_write(0x3FF90000, &rom_data[0x60000], 0xFFFF*sizeof(unsigned char));
                 fclose(f_rom);
             }
-
+/*
+            
             FILE *f_rom1=fopen("rom1.bin", "r");
             
             if (f_rom1 == NULL) {
@@ -3480,7 +3482,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                 cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
                 fclose(f_rom1);
             }
-
+*/
 
 ///// ROM test
 
@@ -3583,10 +3585,11 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                 if (fread(rom_data,0xC1FFF*sizeof(unsigned char),1,f_rom)<1) {
                    printf(" File 'rom.bin' is truncated or corrupt.\n");                
                 }
-                cpu_physical_memory_write(0x40000000, rom_data, 4*0x60000*sizeof(unsigned char)); // 0xC1FFF*
+                cpu_physical_memory_write(0x40000000, rom_data, 0x70000*sizeof(unsigned char)); // 0xC1FFF*
+                cpu_physical_memory_write(0x3FF90000, &rom_data[0x60000], 0xFFFF*sizeof(unsigned char));
                 fclose(f_rom);
             }
-
+/*
             FILE *f_rom1=fopen("rom1.bin", "r");
             
             if (f_rom1 == NULL) {
@@ -3599,7 +3602,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
                 cpu_physical_memory_write(0x3FF90000, rom1_data, 0xFFFF*sizeof(unsigned char));
                 fclose(f_rom1);
             }
-
+*/
 
 
 //esp_rom_ops
