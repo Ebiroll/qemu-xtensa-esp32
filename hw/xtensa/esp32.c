@@ -69,7 +69,8 @@ esp_err_t ulp_run(uint32_t entry_point)
 #endif
 //#include <error.h>
 #include "hw/i2c/i2c.h"
-#include "esp32_sha.h"
+//#include "esp32_sha.h"
+#include "hw/misc/esp32_sha.h"
 
 // From Memorymapped.cpp
 extern const unsigned char* get_flashMemory(void );
@@ -2269,11 +2270,12 @@ if (addr>=0x12000 && addr<0x13ffc) {
         case 0x5F8:
             {
 
-                Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
-                sha_io = g_malloc(sizeof(*sha_io));
-                memory_region_init_io(sha_io, NULL, &esp_sha_ops, sha_state, "esp32.sha",
-                                           0x1000);
-                memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
+                                                           
+                //Esp32ShaState *sha_state = g_malloc(sizeof(Esp32ShaState));
+                //sha_io = g_malloc(sizeof(*sha_io));
+                //memory_region_init_io(sha_io, NULL, &esp32_sha_ops, sha_state, "misc.esp32.sha",
+                //                           0x1000);
+                //memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
             }
 
              break;
@@ -3109,9 +3111,9 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
 //// sha-ops
 // When sha hardware acceleration works, this can be used
-    Esp32SHAState *sha_state = g_malloc(sizeof(Esp32SHAState));
+    Esp32ShaState *sha_state = g_malloc(sizeof(Esp32ShaState));
     sha_io = g_malloc(sizeof(*sha_io));
-     memory_region_init_io(sha_io, NULL, &esp_sha_ops, sha_state, "esp32.sha",
+     memory_region_init_io(sha_io, NULL, &esp32_sha_ops, sha_state, "misc.esp32.sha",
                  0x1000);
    memory_region_add_subregion(system_memory, 0x3ff03000, sha_io);
 
