@@ -826,12 +826,14 @@ static int stat_to_v9stat(V9fsPDU *pdu, V9fsPath *name,
             return err;
         }
     } else if (v9stat->mode & P9_STAT_MODE_DEVICE) {
+        /*
         v9fs_string_sprintf(&v9stat->extension, "%c %u %u",
                 S_ISCHR(stbuf->st_mode) ? 'c' : 'b',
                 major(stbuf->st_rdev), minor(stbuf->st_rdev));
     } else if (S_ISDIR(stbuf->st_mode) || S_ISREG(stbuf->st_mode)) {
         v9fs_string_sprintf(&v9stat->extension, "%s %lu",
                 "HARDLINKCOUNT", (unsigned long)stbuf->st_nlink);
+        */
     }
 
     str = strrchr(name->data, '/');
@@ -2206,11 +2208,13 @@ static void v9fs_create(void *opaque)
         }
 
         nmode |= perm & 0777;
+        /*
         err = v9fs_co_mknod(pdu, fidp, &name, fidp->uid, -1,
                             makedev(major, minor), nmode, &stbuf);
         if (err < 0) {
             goto out;
         }
+        */
         err = v9fs_co_name_to_path(pdu, &fidp->path, name.data, &path);
         if (err < 0) {
             goto out;
@@ -2950,8 +2954,8 @@ static void v9fs_mknod(void *opaque)
         err = -ENOENT;
         goto out_nofid;
     }
-    err = v9fs_co_mknod(pdu, fidp, &name, fidp->uid, gid,
-                        makedev(major, minor), mode, &stbuf);
+    //err = v9fs_co_mknod(pdu, fidp, &name, fidp->uid, gid,
+    //                    makedev(major, minor), mode, &stbuf);
     if (err < 0) {
         goto out;
     }
