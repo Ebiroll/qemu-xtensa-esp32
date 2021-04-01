@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, Max Filippov, Open Source and Linux Lab.
+ * Copyright (c) 2021, Olof Astrand
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1624,6 +1625,12 @@ static unsigned int sim_DPORT_APP_CACHE_CTRL_REG=0x28;
 
 static unsigned int sim_DPORT_APPCPU_CTRL_D_REG=0;
 
+static unsigned int sim_BTDMlpclk_REG=0xffff;
+
+static unsigned int sim_BTDMdiv_REG=0xffff;
+
+static unsigned int rf_calib_data[0x200]={0};
+static unsigned int rf_calib_index;
 
 static unsigned int pro_MMU_REG[0x2000]={0};
 
@@ -1760,6 +1767,17 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
            return sim_DPORT_PRO_CACHE_CTRL1_REG;
            //return 0x8E6;
            break;
+
+       case 0xD4:
+           printf(" BTDM_DIV  3ff000D4=%08X\n",sim_BTDMdiv_REG);
+           return sim_BTDMdiv_REG;
+           break;
+
+       case 0xD8:
+           printf(" BTDM_LPCLK  3ff000D8=%08X\n",sim_BTDMlpclk_REG);
+           return sim_BTDMlpclk_REG;
+           break;
+
 
        case 0x58:
            printf(" DPORT_APP_CACHE_CTRL_REG  3ff00058=%08X\n",sim_DPORT_APP_CACHE_CTRL_REG);
@@ -1990,6 +2008,20 @@ static void esp_io_write(void *opaque, hwaddr addr,
 Esp32 *esp32=(Esp32 *) opaque;
 static MemoryRegion *sha_io;
 MemoryRegion *system_memory = get_system_memory();
+
+
+//static unsigned int rf_calib_data[0x200]={0};
+//static unsigned int rf_calib_index;
+
+    if (addr==0xe0c4) {
+        fprintf(stderr,"(qemu set) calibration data \n");
+        rf_calib_index=val & 0xff;
+    }
+
+    if (addr==0xe0c0) {
+        rf_calib_data[rf_calib_index]=val;
+    }
+
 
 
     // To handle i2c_set_pin
@@ -2258,7 +2290,15 @@ if (addr>=0x12000 && addr<0x13ffc) {
            sim_DPORT_APP_CACHE_CTRL_REG=val;
            break;
 
+       case 0xD4:
+           printf(" BTDM_LPCLK  3ff000D4=% " PRIx64 "\n",val);
+           sim_BTDMdiv_REG=val;
+           break;
 
+       case 0xD8:
+           printf(" BTDM_LPCLK  3ff000D8=% " PRIx64 "\n",val);
+           sim_BTDMlpclk_REG=val;
+           break;
 
         case 0x5F0:
             exit(EXIT_FAILURE);
@@ -2592,17 +2632,31 @@ ec
 */
 
 
+
+    if (addr==0xe0c4) {
+        fprintf(stderr,"(qemu ret) calibration data \n");
+        return rf_calib_index;
+    }
+
+    if (addr==0xe0c0) {
+        return rf_calib_data[rf_calib_index];
+    }
+
+
+
+
 /*    
 rom_i2c_reg block 0x67 reg 0x6 57
 */
 
     if (addr==0xe004) {
-        //fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
+        fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
     }
+
 
     if (s->i2c_block==0x67) {
         if (addr==0xe004) {
-            //fprintf(stderr,"(qemu ret) internal i2c block 0x67 %02x\n",s->i2c_reg );            
+            fprintf(stderr,"(qemu ret) internal i2c block 0x67 %02x\n",s->i2c_reg );            
             switch (s->i2c_reg) {
                 case 0: return 0x00;
                 case 1: return 0xb5;
@@ -2630,7 +2684,7 @@ rom_i2c_reg block 0x67 reg 0x6 57
     if (s->i2c_block==0x62) {
         if (addr==0xe004) {
 
-            //fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
+            fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
             
             switch (s->i2c_reg) {
                 case 0: return 0xbf;
@@ -2682,6 +2736,10 @@ rom_i2c_reg block 0x67 reg 0x6 57
               // 0x980020b0;
         //return   0x800000;
         break;
+    case 0x1c004:
+        printf("agc reg-\n");
+        return 0xffffffff;
+
 
     case 0x33d24:
         printf("-\n");
