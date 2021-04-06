@@ -1702,6 +1702,28 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 
     Esp32 *esp32=(Esp32 *) opaque;
 
+    if (addr==0x71204) {
+        printf("BT \n");
+        return(0x8000900);
+    }
+
+    if (addr==0x7121c) {
+        printf("BT next free\n");
+        return(0x1);
+    }
+
+
+    if (addr==0x71210) {
+        printf("BT int staus\n");
+        return(0x0);
+    }
+
+    if (addr==0x71064) {
+        printf("BT something\n");
+        return(0x01);
+    }
+
+
     if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
 
     if (addr>=0x10000 && addr<0x11ffc) {
@@ -2634,7 +2656,7 @@ ec
 
 
     if (addr==0xe0c4) {
-        fprintf(stderr,"(qemu ret) calibration data \n");
+        printf("(qemu ret) calibration data \n");
         return rf_calib_index;
     }
 
@@ -2650,13 +2672,13 @@ rom_i2c_reg block 0x67 reg 0x6 57
 */
 
     if (addr==0xe004) {
-        fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
+        printf("(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
     }
 
 
     if (s->i2c_block==0x67) {
         if (addr==0xe004) {
-            fprintf(stderr,"(qemu ret) internal i2c block 0x67 %02x\n",s->i2c_reg );            
+            printf("(qemu ret) internal i2c block 0x67 %02x\n",s->i2c_reg );            
             switch (s->i2c_reg) {
                 case 0: return 0x00;
                 case 1: return 0xb5;
@@ -2684,7 +2706,7 @@ rom_i2c_reg block 0x67 reg 0x6 57
     if (s->i2c_block==0x62) {
         if (addr==0xe004) {
 
-            fprintf(stderr,"(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
+            printf("(qemu ret) internal i2c block 0x62 %02x %d\n",s->i2c_reg,guess );
             
             switch (s->i2c_reg) {
                 case 0: return 0xbf;
