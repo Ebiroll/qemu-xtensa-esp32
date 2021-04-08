@@ -658,6 +658,12 @@ enum {
 };
 
 enum {
+    ESP32_SPI_FLASH_BITS(USER1, DUMMY_CYCLELEN, 0, 8),
+    ESP32_SPI_FLASH_BITS(USER1, ADDR_BITLEN, 26, 6),
+};
+
+
+enum {
     ESP32_SPI_FLASH_BITS(USER2, COMMAND_VALUE, 0, 16),
     ESP32_SPI_FLASH_BITS(USER2, COMMAND_BITLEN, 28, 4),
 };
@@ -813,10 +819,17 @@ static void esp32_spi_cmd(Esp32SpiState *s, hwaddr addr,
             }
 */
 
-
             memcpy(&s->reg[data_w0],
                    s->flash_image + silly,  // ESP32_SPI_GET(s, ADDR, OFFSET)
                    4*16);  // (ESP32_SPI_GET(s, ADDR, LENGTH) + 3) & 0x3c 
+
+           //char *ptr=s->reg[data_w0];
+           //for (int qk=0;j<4*16;j++) {
+           //    printf("%c",*ptr);
+           //    ptr++;
+           //}
+
+
 /*
                     unsigned int *data=(unsigned int *)&s->reg[data_w0];
                     int j=0;
@@ -995,10 +1008,10 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
          }
 
          // Only clear 1:s not possible to set a 0 to 1
-         unsigned int *data=(unsigned int *)(s->flash_image + write_addr + regnum*4);
-         unsigned int test=*data;
-          test = ~test;
-         unsigned int in_data=val;
+         uint32_t *data=(uint32_t *)(s->flash_image + write_addr + regnum*4);
+         uint32_t test=*data;
+         test = ~test;
+         uint32_t in_data=val;
 
          DEBUG_LOG("------SPI 0 data written 0x%08x v=0x%08x now=0x%08x 0x%08x\n",regnum,val,*data,write_addr);   // *data,test & in_data    
                   
@@ -1006,7 +1019,7 @@ static void esp32_spi_write(void *opaque, hwaddr addr, uint64_t val,
          //*data= test & in_data;
          if (data < (s->flash_image + 4*1024*1024)) {
              *data=in_data;
-             DEBUG_LOG("now=0x%08x",*data);
+             DEBUG_LOG("now=0x%08x\n",*data);
 
              s->length-=4;
              DEBUG_LOG("len %d\n",s->length);
@@ -1724,7 +1737,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
     }
 
 
-    if ((addr!=0x04001c) && (addr!=0x38)) printf("io read %" PRIx64 " ",addr);
+    if ((addr!=0x04001c) && (addr!=0x38) && addr!=0x60048) printf("io read %" PRIx64 " ",addr);
 
     if (addr>=0x10000 && addr<0x11ffc) {
         return(pro_MMU_REG[addr/4-0x10000/4]);
@@ -2012,7 +2025,7 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
             }
           }
 
-          if (addr!=0x04001c) printf("\n");
+          // if (addr!=0x04001c) printf("\n");
 
     }
 
@@ -2239,7 +2252,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
 
 
-    if (  addr==0x5f060 || addr==0x5f064 || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458
+    if (  addr==0x5f060 || addr==0x5f064 || addr==0x69440 || addr==0x69454 || addr==0x6945c || addr==0x69458 || addr==0x60048
      ||  (addr>=0x69440 && addr<=0x6947c) || addr==0x44008  || addr==0x4400c
     )  {
         // Less info
@@ -2247,6 +2260,10 @@ if (addr>=0x12000 && addr<0x13ffc) {
        if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
     }
     switch (addr) {
+          case 0x24:
+                printf("DPORT_BB_IRQ_REG 0x3ff00024\n");
+                // 0xfffffff3 | 4; BW 40 EN
+          break;
 
         case 0x2c:
             //SET_PERI_REG_MASK(DPORT_APPCPU_CTRL_A_REG, DPORT_APPCPU_RESETTING); 
@@ -2427,7 +2444,7 @@ if (addr>=0x12000 && addr<0x13ffc) {
 
 
            case 0xDC:
-              printf(" DPORT_CPU_INTR_FROM_CPU_0_REG  3ff000DC  %" PRIx64 "\n" ,val);
+              //printf(" DPORT_CPU_INTR_FROM_CPU_0_REG  3ff000DC  %" PRIx64 "\n" ,val);
               if (val==0) {
                    qemu_irq_lower(esp32->pro_to_app_yield_irq);
               } else {
@@ -2551,7 +2568,7 @@ typedef struct Esp32WifiState {
     int i2c_reg;
 } Esp32WifiState;
 
-static unsigned char guess=0x98;
+static unsigned char guess=0x98+10;
 
 
 static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
@@ -2562,6 +2579,24 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 
     printf("wifi read 0x%" PRIx64 " \n",addr);
 
+        if (addr==0x33c48) {
+             printf("BB_WDT_STATUS\n");
+        }
+
+
+        if (addr==0x33c48) {
+             printf("WDEV_LMAC_IRQ_STATUS\n");
+
+             // 0x800 
+        }
+
+
+
+
+        if (addr==0x33d1c) {
+             printf("WDEV_TRANSMIT_ENABLE\n");
+
+        }
 
         // WDEV_RND_REG
 
@@ -2769,6 +2804,7 @@ rom_i2c_reg block 0x67 reg 0x6 57
     
     case 0x33c00:
         return 0x0002BBED;
+        printf("WDEV_RND\n");
         break;
         //return 0x01000000;
         {
@@ -2811,6 +2847,19 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
         esp32_i2c_fifo_dataSet((addr-0x01301c)/4,val);
     }
 
+    if (addr==0x6044) {
+
+        printf("BB_COMMAND 0x60006044 ,%" PRIx64 " \n",val);
+    }
+    if (addr==0x5034) {
+
+        printf("BB_BUFF_0 0x60005034 ,%" PRIx64 " \n",val);
+    }
+
+    if (addr==0x5038) {
+
+        printf("BB_BUFF_1 0x60005038 ,%" PRIx64 " \n",val);
+    }
 
 
     pthread_mutex_lock(&mutex);
