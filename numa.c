@@ -50,6 +50,7 @@ static int max_numa_nodeid; /* Highest specified NUMA node ID, plus one.
                              * For all nodes, nodeid < max_numa_nodeid
                              */
 int nb_numa_nodes;
+bool have_numa_distance;
 NodeInfo numa_info[MAX_NODES];
 
 void numa_set_mem_node_id(ram_addr_t addr, uint64_t size, uint32_t node)

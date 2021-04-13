@@ -19,7 +19,9 @@
 #include "hw/arm/arm.h"
 #include "exec/address-spaces.h"
 #include "gic_internal.h"
+#include "exec/exec-all.h"
 #include "qemu/log.h"
+#include "trace.h"
 
 typedef struct {
     GICState gic;
@@ -551,7 +553,7 @@ static void nvic_writel(nvic_state *s, uint32_t offset, uint32_t value)
         }
         /* This may enable/disable the MMU, so do a TLB flush.  */
         qemu_log_mask(LOG_UNIMP,"writel:mpu_ctrl now: %08X\n", cpu->env.v7m.mpu_ctrl);
-        qemu_log_mask(LOG_UNIMP,"writel:sctlr_ns now: %016llX\n", cpu->env.cp15.sctlr_ns);
+        qemu_log_mask(LOG_UNIMP,"writel:sctlr_ns now: %016lX\n", cpu->env.cp15.sctlr_ns);
         tlb_flush(CPU(cpu), 1);
         break;
     case 0xd98: /* MPU_RNR.  */

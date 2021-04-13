@@ -24,6 +24,10 @@
 #include "qemu/osdep.h"
 #include "net/slirp.h"
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wformat-truncation" /*  -Wformat-overflow Or "-Wformat-truncation" */
+#endif
+
 
 #ifndef _WIN32
 #include <pwd.h>

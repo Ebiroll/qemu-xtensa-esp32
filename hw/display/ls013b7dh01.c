@@ -322,7 +322,7 @@ static const GraphicHwOps sm_lcd_ops = {
     .invalidate = sm_lcd_invalidate_display,
 };
 
-static int sm_lcd_init(SSISlave *dev)
+static void sm_lcd_init(SSISlave *dev,Error **errp)
 {
     lcd_state *s = FROM_SSI_SLAVE(lcd_state, dev);
 
@@ -347,7 +347,7 @@ static int sm_lcd_init(SSISlave *dev)
     qdev_init_gpio_in_named(DEVICE(dev), sm_lcd_power_ctl,
                             "power_ctl", 1);
 
-    return 0;
+    //return 0;
 }
 
 static Property sm_lcd_init_properties[] = {

@@ -51,6 +51,17 @@
 #include "qemu/host-utils.h"
 #include "hw/sysbus.h"
 
+pflash_t *pflash_jedec_424_register(hwaddr base,
+                                DeviceState *qdev, const char *name,
+                                hwaddr size,
+                                BlockBackend *blk,
+                                uint32_t sector_len, int nb_blocs, uint32_t bank_size,
+                                int bank_width, uint16_t id0, uint16_t id1,
+                                uint16_t id2, uint16_t id3, int be);
+
+MemoryRegion *pflash_jedec_424_get_memory(pflash_t *fl);
+
+
 #define PFLASH_BUG(fmt, ...) \
 do { \
     fprintf(stderr, "PFLASH: Possible BUG - " fmt, ## __VA_ARGS__); \
@@ -723,7 +734,7 @@ static void pflash_write(pflash_t *pfl, hwaddr offset,
 
  error_flash:
     fprintf(stderr, "PFLASH %s: Unimplemented flash cmd sequence "
-                  "(offset 0x%llx sector offset 0x%x, bank %u pfl->wcycle %d pfl->cmd 0x%x value 0x%x)"
+                  "(offset 0x%lx sector offset 0x%x, bank %u pfl->wcycle %d pfl->cmd 0x%x value 0x%x)"
                   "\n", __func__, offset, sector_offset, bank, pfl->wcycle[bank], pfl->cmd[bank], value);
 
  reset_bank:

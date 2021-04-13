@@ -122,6 +122,7 @@ struct MachineClass {
     GArray *compat_props;
     const char *hw_version;
     ram_addr_t default_ram_size;
+    const char *default_cpu_type;
     bool option_rom_has_mr;
     bool rom_file_has_mr;
 

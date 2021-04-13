@@ -658,7 +658,7 @@ static uint64_t stm32_uart_read(void *opaque, hwaddr offset,
                           unsigned size)
 {
     Stm32Uart *s = (Stm32Uart *)opaque;
-    uint32_t value;
+    uint32_t value=0;
     int start = (offset & 3) * 8;
     int length = size * 8;
 

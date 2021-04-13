@@ -1001,7 +1001,7 @@ static void ps_display_reset(DeviceState *dev)
 
 
 // -----------------------------------------------------------------------------
-static int ps_display_init(SSISlave *dev)
+static void ps_display_init(SSISlave *dev,Error **errp)
 {
     PSDisplayGlobals *s = FROM_SSI_SLAVE(PSDisplayGlobals, dev);
 
@@ -1043,7 +1043,6 @@ static int ps_display_init(SSISlave *dev)
     qdev_init_gpio_in_named(DEVICE(dev), ps_display_power_ctl,
                             "power_ctl", 1);
 
-    return 0;
 }
 
 // -----------------------------------------------------------------------------

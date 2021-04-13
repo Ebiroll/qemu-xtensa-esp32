@@ -62,7 +62,7 @@ esp_err_t ulp_run(uint32_t entry_point)
 #include "qemu/timer.h"
 #include "inttypes.h"
 #include "hw/isa/isa.h"
-#include "hw/i2c/i2c_esp32.h"
+#include "hw/i2c/esp32_i2c.h"
 #ifndef _WIN32
 #include <poll.h>
 #else
@@ -2830,9 +2830,9 @@ rom_i2c_reg block 0x67 reg 0x6 57
     return 0x0;
 }
 
-//extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
+extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
 
-//extern void esp32_i2c_interruptSet(qemu_irq new_irq);
+extern void esp32_i2c_interruptSet(qemu_irq new_irq);
 
 
 static void esp_wifi_write(void *opaque, hwaddr addr,

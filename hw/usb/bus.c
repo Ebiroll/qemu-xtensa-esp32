@@ -9,6 +9,10 @@
 #include "trace.h"
 #include "qemu/cutils.h"
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wformat-truncation" /*  -Wformat-overflow Or "-Wformat-truncation" */
+#endif
+
 static void usb_bus_dev_print(Monitor *mon, DeviceState *qdev, int indent);
 
 static char *usb_get_dev_path(DeviceState *dev);
@@ -406,7 +410,7 @@ void usb_register_companion(const char *masterbus, USBPort *ports[],
 void usb_port_location(USBPort *downstream, USBPort *upstream, int portnr)
 {
     if (upstream) {
-        snprintf(downstream->path, sizeof(downstream->path), "%s.%d",
+        snprintf(downstream->path, sizeof(downstream->path)/2, "%s.%d",
                  upstream->path, portnr);
         downstream->hubcount = upstream->hubcount + 1;
     } else {

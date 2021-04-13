@@ -1,7 +1,7 @@
 /*
- * STM32F205 SoC
+ * Microsemi Smartfusion2 SoC
  *
- * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Copyright (c) 2017 Subbaraya Sundeep <sundeep.lkml@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,47 +22,46 @@
  * THE SOFTWARE.
  */
 
-#ifndef HW_ARM_STM32F205_SOC_H
-#define HW_ARM_STM32F205_SOC_H
+#ifndef HW_ARM_MSF2_SOC_H
+#define HW_ARM_MSF2_SOC_H
 
-#include "hw/misc/stm32f2xx_syscfg.h"
-#include "hw/timer/stm32f2xx_timer.h"
-#include "hw/char/stm32f2xx_usart.h"
-#include "hw/adc/stm32f2xx_adc.h"
-#include "hw/or-irq.h"
-#include "hw/ssi/stm32f2xx_spi.h"
 #include "hw/arm/armv7m.h"
+#include "hw/timer/mss-timer.h"
+#include "hw/misc/msf2-sysreg.h"
+#include "hw/ssi/mss-spi.h"
 
-#define TYPE_STM32F205_SOC "stm32f205-soc"
-#define STM32F205_SOC(obj) \
-    OBJECT_CHECK(STM32F205State, (obj), TYPE_STM32F205_SOC)
+#define TYPE_MSF2_SOC     "msf2-soc"
+#define MSF2_SOC(obj)     OBJECT_CHECK(MSF2State, (obj), TYPE_MSF2_SOC)
 
-#define STM_NUM_USARTS 6
-#define STM_NUM_TIMERS 4
-#define STM_NUM_ADCS 3
-#define STM_NUM_SPIS 3
+#define MSF2_NUM_SPIS         2
+#define MSF2_NUM_UARTS        2
 
-#define FLASH_BASE_ADDRESS 0x08000000
-#define FLASH_SIZE (1024 * 1024)
-#define SRAM_BASE_ADDRESS 0x20000000
-#define SRAM_SIZE (128 * 1024)
+/*
+ * System timer consists of two programmable 32-bit
+ * decrementing counters that generate individual interrupts to
+ * the Cortex-M3 processor
+ */
+#define MSF2_NUM_TIMERS       2
 
-typedef struct STM32F205State {
+typedef struct MSF2State {
     /*< private >*/
     SysBusDevice parent_obj;
     /*< public >*/
 
-    char *cpu_type;
-
     ARMv7MState armv7m;
 
-    STM32F2XXSyscfgState syscfg;
-    STM32F2XXUsartState usart[STM_NUM_USARTS];
-    STM32F2XXTimerState timer[STM_NUM_TIMERS];
-    STM32F2XXADCState adc[STM_NUM_ADCS];
-    STM32F2XXSPIState spi[STM_NUM_SPIS];
+    char *cpu_type;
+    char *part_name;
+    uint64_t envm_size;
+    uint64_t esram_size;
 
-    qemu_or_irq *adc_irqs;
-} STM32F205State;
+    uint32_t m3clk;
+    uint8_t apb0div;
+    uint8_t apb1div;
+
+    MSF2SysregState sysreg;
+    MSSTimerState timer;
+    MSSSpiState spi[MSF2_NUM_SPIS];
+} MSF2State;
 
 #endif

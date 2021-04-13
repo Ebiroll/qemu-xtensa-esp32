@@ -8,6 +8,7 @@
 #include "hw/boards.h"
 
 extern int nb_numa_nodes;   /* Number of NUMA nodes */
+extern bool have_numa_distance;
 
 struct numa_addr_range {
     ram_addr_t mem_start;
