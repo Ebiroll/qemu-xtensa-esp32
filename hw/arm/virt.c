@@ -219,6 +219,7 @@ static void create_fdt(VirtMachineState *vms)
                                 "clk24mhz");
     qemu_fdt_setprop_cell(fdt, "/apb-pclk", "phandle", vms->clock_phandle);
 
+#if 0
     if (have_numa_distance) {
         int size = nb_numa_nodes * nb_numa_nodes * 3 * sizeof(uint32_t);
         uint32_t *matrix = g_malloc0(size);
@@ -240,6 +241,7 @@ static void create_fdt(VirtMachineState *vms)
                          matrix, size);
         g_free(matrix);
     }
+ #endif   
 }
 
 static void fdt_add_psci_node(const VirtMachineState *vms)
@@ -411,10 +413,10 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
                                   armcpu->mp_affinity);
         }
 
-        if (ms->possible_cpus->cpus[cs->cpu_index].props.has_node_id) {
-            qemu_fdt_setprop_cell(vms->fdt, nodename, "numa-node-id",
-                ms->possible_cpus->cpus[cs->cpu_index].props.node_id);
-        }
+        //if (ms->possible_cpus->cpus[cs->cpu_index].props.has_node_id) {
+        //    qemu_fdt_setprop_cell(vms->fdt, nodename, "numa-node-id",
+        //        ms->possible_cpus->cpus[cs->cpu_index].props.node_id);
+        //}
 
         g_free(nodename);
     }
@@ -642,7 +644,7 @@ static void create_gic(VirtMachineState *vms, qemu_irq *pic)
 }
 
 static void create_uart(const VirtMachineState *vms, qemu_irq *pic, int uart,
-                        MemoryRegion *mem, Chardev *chr)
+                        MemoryRegion *mem, CharDriverState *chr)
 {
     char *nodename;
     hwaddr base = vms->memmap[uart].base;
@@ -1277,10 +1279,10 @@ static void machvirt_init(MachineState *machine)
         }
     }
 
-    if (!cpu_type_valid(machine->cpu_type)) {
-        error_report("mach-virt: CPU type %s not supported", machine->cpu_type);
-        exit(1);
-    }
+    //if (!cpu_type_valid(machine->cpu_type)) {
+    //    error_report("mach-virt: CPU type %s not supported", machine->cpu_type);
+    //   exit(1);
+    //}
 
     /* If we have an EL3 boot ROM then the assumption is that it will
      * implement PSCI itself, so disable QEMU's internal implementation
@@ -1292,6 +1294,7 @@ static void machvirt_init(MachineState *machine)
      * and otherwise we will use HVC (for backwards compatibility and
      * because if we're using KVM then we must use HVC).
      */
+    /*
     if (vms->secure && firmware_loaded) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_DISABLED;
     } else if (vms->virt) {
@@ -1299,6 +1302,7 @@ static void machvirt_init(MachineState *machine)
     } else {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_HVC;
     }
+    */
 
     /* The maximum number of CPUs depends on the GIC version, or on how
      * many redistributors we can fit into the memory map.
@@ -1357,7 +1361,7 @@ static void machvirt_init(MachineState *machine)
             break;
         }
 
-        cpuobj = object_new(machine->cpu_type);
+        cpuobj = object_new(possible_cpus->cpus[n].type);
         object_property_set_int(cpuobj, possible_cpus->cpus[n].arch_id,
                                 "mp-affinity", NULL);
 
@@ -1409,6 +1413,23 @@ static void machvirt_init(MachineState *machine)
     fdt_add_cpu_nodes(vms);
     fdt_add_psci_node(vms);
 
+   if (!kvm_enabled()) {
+        ARMCPU *cpu = ARM_CPU(first_cpu);
+        bool aarch64 = object_property_get_bool(OBJECT(cpu), "aarch64", NULL);
+
+        if (aarch64 && vms->highmem) {
+            int requested_pa_size, pamax = arm_pamax(cpu);
+
+//            requested_pa_size = 64 - clz64(vms->highest_gpa);
+//            if (pamax < requested_pa_size) {
+//                error_report("VCPU supports less PA bits (%d) than requested "
+//                            "by the memory map (%d)", pamax, requested_pa_size);
+//                exit(1);
+ //           }
+        }
+    }
+
+
     memory_region_allocate_system_memory(ram, NULL, "mach-virt.ram",
                                          machine->ram_size);
     memory_region_add_subregion(sysmem, vms->memmap[VIRT_MEM].base, ram);
@@ -1419,11 +1440,11 @@ static void machvirt_init(MachineState *machine)
 
     fdt_add_pmu_nodes(vms);
 
-    create_uart(vms, pic, VIRT_UART, sysmem, serial_hds[0]);
+    create_uart(vms, pic, VIRT_UART, sysmem, serial_hd(0));
 
     if (vms->secure) {
         create_secure_ram(vms, secure_sysmem);
-        create_uart(vms, pic, VIRT_SECURE_UART, secure_sysmem, serial_hds[1]);
+        create_uart(vms, pic, VIRT_SECURE_UART, secure_sysmem, serial_hd(1));
     }
 
     create_rtc(vms, pic);
@@ -1436,7 +1457,9 @@ static void machvirt_init(MachineState *machine)
      * (which will be automatically plugged in to the transports). If
      * no backend is created the transport will just sit harmlessly idle.
      */
-    create_virtio_devices(vms, pic);
+    //create_virtio_devices(vms, pic);
+    //create_uart(vms, pic , VIRT_UART, sysmem, serial_hd(0));
+
 
     vms->fw_cfg = create_fw_cfg(vms, &address_space_memory);
     rom_set_fw(vms->fw_cfg);
@@ -1462,6 +1485,10 @@ static void machvirt_init(MachineState *machine)
      * Notifiers are executed in registration reverse order.
      */
     create_platform_bus(vms, pic);
+
+    vms->machine_done.notify = virt_machine_done;
+    qemu_add_machine_init_done_notifier(&vms->machine_done);
+
 }
 
 static bool virt_get_secure(Object *obj, Error **errp)
@@ -1596,11 +1623,11 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
     mc->no_cdrom = 1;
     mc->pci_allow_0_address = true;
     /* We know we will never create a pre-ARMv7 CPU which needs 1K pages */
-    mc->minimum_page_bits = 12;
+    // OLAS mc->minimum_page_bits = 12;
     mc->possible_cpu_arch_ids = virt_possible_cpu_arch_ids;
-    mc->cpu_index_to_instance_props = virt_cpu_index_to_props;
+    //mc->cpu_index_to_instance_props = virt_cpu_index_to_props;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a15");
-    mc->get_default_cpu_node_id = virt_get_default_cpu_node_id;
+    //mc->get_default_cpu_node_id = virt_get_default_cpu_node_id;
 }
 
 static const TypeInfo virt_machine_info = {
@@ -1677,6 +1704,8 @@ static void virt_2_11_instance_init(Object *obj)
     vms->memmap = a15memmap;
     vms->irqmap = a15irqmap;
 }
+
+#if 0
 
 static void virt_machine_2_11_options(MachineClass *mc)
 {
@@ -1774,3 +1803,4 @@ static void virt_machine_2_6_options(MachineClass *mc)
     vmc->no_pmu = true;
 }
 DEFINE_VIRT_MACHINE(2, 6)
+#endif

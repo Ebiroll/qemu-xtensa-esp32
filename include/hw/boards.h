@@ -49,7 +49,11 @@ void machine_register_compat_props(MachineState *machine);
  */
 typedef struct {
     uint64_t arch_id;
-    struct CPUState *cpu;
+    int64_t vcpus_count;
+    CpuInstanceProperties props;
+    Object *cpu;
+    const char *type;
+//    struct CPUState *cpu;
 } CPUArchId;
 
 /**
@@ -172,6 +176,7 @@ struct MachineState {
     char *initrd_filename;
     const char *cpu_model;
     AccelState *accelerator;
+    CPUArchIdList *possible_cpus;
 };
 
 #define DEFINE_MACHINE(namestr, machine_initfn) \
