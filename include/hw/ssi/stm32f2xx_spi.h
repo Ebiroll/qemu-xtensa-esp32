@@ -1,7 +1,7 @@
 /*
- * Microsemi Smartfusion2 SoC
+ * STM32F2XX SPI
  *
- * Copyright (c) 2017 Subbaraya Sundeep <sundeep.lkml@gmail.com>
+ * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,46 +22,51 @@
  * THE SOFTWARE.
  */
 
-#ifndef HW_ARM_MSF2_SOC_H
-#define HW_ARM_MSF2_SOC_H
+#ifndef HW_STM32F2XX_SPI_H
+#define HW_STM32F2XX_SPI_H
 
-//#include "hw/arm/armv7m.h"
-#include "hw/timer/mss-timer.h"
-#include "hw/misc/msf2-sysreg.h"
-#include "hw/ssi/mss-spi.h"
+#include "hw/sysbus.h"
+#include "hw/hw.h"
+#include "hw/ssi/ssi.h"
 
-#define TYPE_MSF2_SOC     "msf2-soc"
-#define MSF2_SOC(obj)     OBJECT_CHECK(MSF2State, (obj), TYPE_MSF2_SOC)
+#define STM_SPI_CR1     0x00
+#define STM_SPI_CR2     0x04
+#define STM_SPI_SR      0x08
+#define STM_SPI_DR      0x0C
+#define STM_SPI_CRCPR   0x10
+#define STM_SPI_RXCRCR  0x14
+#define STM_SPI_TXCRCR  0x18
+#define STM_SPI_I2SCFGR 0x1C
+#define STM_SPI_I2SPR   0x20
 
-#define MSF2_NUM_SPIS         2
-#define MSF2_NUM_UARTS        2
+#define STM_SPI_CR1_SPE  (1 << 6)
+#define STM_SPI_CR1_MSTR (1 << 2)
 
-/*
- * System timer consists of two programmable 32-bit
- * decrementing counters that generate individual interrupts to
- * the Cortex-M3 processor
- */
-#define MSF2_NUM_TIMERS       2
+#define STM_SPI_SR_RXNE   1
 
-typedef struct MSF2State {
-    /*< private >*/
+#define TYPE_STM32F2XX_SPI "stm32f2xx-spi"
+#define STM32F2XX_SPI(obj) \
+    OBJECT_CHECK(STM32F2XXSPIState, (obj), TYPE_STM32F2XX_SPI)
+
+typedef struct {
+    /* <private> */
     SysBusDevice parent_obj;
-    /*< public >*/
 
-    ARMv7MState armv7m;
+    /* <public> */
+    MemoryRegion mmio;
 
-    char *cpu_type;
-    char *part_name;
-    uint64_t envm_size;
-    uint64_t esram_size;
+    uint32_t spi_cr1;
+    uint32_t spi_cr2;
+    uint32_t spi_sr;
+    uint32_t spi_dr;
+    uint32_t spi_crcpr;
+    uint32_t spi_rxcrcr;
+    uint32_t spi_txcrcr;
+    uint32_t spi_i2scfgr;
+    uint32_t spi_i2spr;
 
-    uint32_t m3clk;
-    uint8_t apb0div;
-    uint8_t apb1div;
+    qemu_irq irq;
+    SSIBus *ssi;
+} STM32F2XXSPIState;
 
-    MSF2SysregState sysreg;
-    MSSTimerState timer;
-    MSSSpiState spi[MSF2_NUM_SPIS];
-} MSF2State;
-
-#endif
+#endif /* HW_STM32F2XX_SPI_H */

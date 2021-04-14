@@ -47,10 +47,11 @@ static const int spi_irq[STM_NUM_SPIS] = {35, 36, 51};
 static void stm32f205_soc_initfn(Object *obj)
 {
     STM32F205State *s = STM32F205_SOC(obj);
+
     int i;
 
-    object_initialize(&s->armv7m, sizeof(s->armv7m), TYPE_ARMV7M);
-    qdev_set_parent_bus(DEVICE(&s->armv7m), sysbus_get_default());
+    //object_initialize(&s->armv7m, sizeof(s->armv7m), TYPE_ARMV7M);
+    //qdev_set_parent_bus(DEVICE(&s->armv7m), sysbus_get_default());
 
     object_initialize(&s->syscfg, sizeof(s->syscfg), TYPE_STM32F2XX_SYSCFG);
     qdev_set_parent_bus(DEVICE(&s->syscfg), sysbus_get_default());
@@ -67,7 +68,7 @@ static void stm32f205_soc_initfn(Object *obj)
         qdev_set_parent_bus(DEVICE(&s->timer[i]), sysbus_get_default());
     }
 
-    s->adc_irqs = OR_IRQ(object_new(TYPE_OR_IRQ));
+    //s->adc_irqs = OR_IRQ(object_new(TYPE_OR_IRQ));
 
     for (i = 0; i < STM_NUM_ADCS; i++) {
         object_initialize(&s->adc[i], sizeof(s->adc[i]),
@@ -85,8 +86,10 @@ static void stm32f205_soc_initfn(Object *obj)
 static void stm32f205_soc_realize(DeviceState *dev_soc, Error **errp)
 {
     STM32F205State *s = STM32F205_SOC(dev_soc);
-    DeviceState *dev, *armv7m;
+    DeviceState *dev;
     SysBusDevice *busdev;
+    DeviceState *syscfgdev, *usartdev, *timerdev, *nvic;
+    SysBusDevice *syscfgbusdev, *usartbusdev, *timerbusdev;
     Error *err = NULL;
     int i;
 
@@ -100,7 +103,7 @@ static void stm32f205_soc_realize(DeviceState *dev_soc, Error **errp)
     memory_region_init_alias(flash_alias, NULL, "STM32F205.flash.alias",
                              flash, 0, FLASH_SIZE);
 
-    //vmstate_register_ram_global(flash);
+    vmstate_register_ram_global(flash);
 
     memory_region_set_readonly(flash, true);
     memory_region_set_readonly(flash_alias, true);
@@ -110,58 +113,51 @@ static void stm32f205_soc_realize(DeviceState *dev_soc, Error **errp)
 
     memory_region_init_ram(sram, NULL, "STM32F205.sram", SRAM_SIZE,
                            &error_fatal);
-   // vmstate_register_ram_global(sram);
+    vmstate_register_ram_global(sram);
     memory_region_add_subregion(system_memory, SRAM_BASE_ADDRESS, sram);
 
-    armv7m = DEVICE(&s->armv7m);
-    qdev_prop_set_uint32(armv7m, "num-irq", 96);
-    qdev_prop_set_string(armv7m, "cpu-type", s->cpu_type);
-    object_property_set_link(OBJECT(&s->armv7m), OBJECT(get_system_memory()),
-                                     "memory", &error_abort);
-    object_property_set_bool(OBJECT(&s->armv7m), true, "realized", &err);
-    if (err != NULL) {
-        error_propagate(errp, err);
-        return;
-    }
+    nvic = armv7m_init(get_system_memory(), FLASH_SIZE, 96,
+                       s->kernel_filename, s->cpu_model);
 
     /* System configuration controller */
-    dev = DEVICE(&s->syscfg);
+    syscfgdev = DEVICE(&s->syscfg);
     object_property_set_bool(OBJECT(&s->syscfg), true, "realized", &err);
     if (err != NULL) {
         error_propagate(errp, err);
         return;
     }
-    busdev = SYS_BUS_DEVICE(dev);
-    sysbus_mmio_map(busdev, 0, 0x40013800);
-    sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, 71));
+    syscfgbusdev = SYS_BUS_DEVICE(syscfgdev);
+    sysbus_mmio_map(syscfgbusdev, 0, 0x40013800);
+    sysbus_connect_irq(syscfgbusdev, 0, qdev_get_gpio_in(nvic, 71));
 
     /* Attach UART (uses USART registers) and USART controllers */
     for (i = 0; i < STM_NUM_USARTS; i++) {
-        dev = DEVICE(&(s->usart[i]));
-        qdev_prop_set_chr(dev, "chardev",
-                          i < MAX_SERIAL_PORTS ? serial_hds[i] : NULL);
+        usartdev = DEVICE(&(s->usart[i]));
+        qdev_prop_set_chr(usartdev, "chardev", i < MAX_SERIAL_PORTS ? serial_hds[i] : NULL);
         object_property_set_bool(OBJECT(&s->usart[i]), true, "realized", &err);
         if (err != NULL) {
             error_propagate(errp, err);
             return;
         }
-        busdev = SYS_BUS_DEVICE(dev);
-        sysbus_mmio_map(busdev, 0, usart_addr[i]);
-        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, usart_irq[i]));
+        usartbusdev = SYS_BUS_DEVICE(usartdev);
+        sysbus_mmio_map(usartbusdev, 0, usart_addr[i]);
+        sysbus_connect_irq(usartbusdev, 0,
+                           qdev_get_gpio_in(nvic, usart_irq[i]));
     }
 
     /* Timer 2 to 5 */
     for (i = 0; i < STM_NUM_TIMERS; i++) {
-        dev = DEVICE(&(s->timer[i]));
-        qdev_prop_set_uint64(dev, "clock-frequency", 1000000000);
+        timerdev = DEVICE(&(s->timer[i]));
+        qdev_prop_set_uint64(timerdev, "clock-frequency", 1000000000);
         object_property_set_bool(OBJECT(&s->timer[i]), true, "realized", &err);
         if (err != NULL) {
             error_propagate(errp, err);
             return;
         }
-        busdev = SYS_BUS_DEVICE(dev);
-        sysbus_mmio_map(busdev, 0, timer_addr[i]);
-        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, timer_irq[i]));
+        timerbusdev = SYS_BUS_DEVICE(timerdev);
+        sysbus_mmio_map(timerbusdev, 0, timer_addr[i]);
+        sysbus_connect_irq(timerbusdev, 0,
+                           qdev_get_gpio_in(nvic, timer_irq[i]));
     }
 
     /* ADC 1 to 3 */
@@ -172,8 +168,8 @@ static void stm32f205_soc_realize(DeviceState *dev_soc, Error **errp)
         error_propagate(errp, err);
         return;
     }
-    qdev_connect_gpio_out(DEVICE(s->adc_irqs), 0,
-                          qdev_get_gpio_in(armv7m, ADC_IRQ));
+    //qdev_connect_gpio_out(DEVICE(s->adc_irqs), 0,
+    //                      qdev_get_gpio_in(armv7m, ADC_IRQ));
 
     for (i = 0; i < STM_NUM_ADCS; i++) {
         dev = DEVICE(&(s->adc[i]));
@@ -198,12 +194,13 @@ static void stm32f205_soc_realize(DeviceState *dev_soc, Error **errp)
         }
         busdev = SYS_BUS_DEVICE(dev);
         sysbus_mmio_map(busdev, 0, spi_addr[i]);
-        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, spi_irq[i]));
+        //sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, spi_irq[i]));
     }
 }
 
 static Property stm32f205_soc_properties[] = {
-    DEFINE_PROP_STRING("cpu-type", STM32F205State, cpu_type),
+    DEFINE_PROP_STRING("kernel-filename", STM32F205State, kernel_filename),
+    DEFINE_PROP_STRING("cpu-model", STM32F205State, cpu_model),
     DEFINE_PROP_END_OF_LIST(),
 };
 

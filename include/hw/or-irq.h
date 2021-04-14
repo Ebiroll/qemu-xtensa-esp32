@@ -1,7 +1,7 @@
 /*
- * Microsemi Smartfusion2 SoC
+ * QEMU IRQ/GPIO common code.
  *
- * Copyright (c) 2017 Subbaraya Sundeep <sundeep.lkml@gmail.com>
+ * Copyright (c) 2016 Alistair Francis <alistair@alistair23.me>.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,46 +22,22 @@
  * THE SOFTWARE.
  */
 
-#ifndef HW_ARM_MSF2_SOC_H
-#define HW_ARM_MSF2_SOC_H
+#include "hw/irq.h"
+#include "hw/sysbus.h"
+#include "qom/object.h"
 
-//#include "hw/arm/armv7m.h"
-#include "hw/timer/mss-timer.h"
-#include "hw/misc/msf2-sysreg.h"
-#include "hw/ssi/mss-spi.h"
+#define TYPE_OR_IRQ "or-irq"
 
-#define TYPE_MSF2_SOC     "msf2-soc"
-#define MSF2_SOC(obj)     OBJECT_CHECK(MSF2State, (obj), TYPE_MSF2_SOC)
+#define MAX_OR_LINES      16
 
-#define MSF2_NUM_SPIS         2
-#define MSF2_NUM_UARTS        2
+typedef struct OrIRQState qemu_or_irq;
 
-/*
- * System timer consists of two programmable 32-bit
- * decrementing counters that generate individual interrupts to
- * the Cortex-M3 processor
- */
-#define MSF2_NUM_TIMERS       2
+#define OR_IRQ(obj) OBJECT_CHECK(qemu_or_irq, (obj), TYPE_OR_IRQ)
 
-typedef struct MSF2State {
-    /*< private >*/
-    SysBusDevice parent_obj;
-    /*< public >*/
+struct OrIRQState {
+    DeviceState parent_obj;
 
-    ARMv7MState armv7m;
-
-    char *cpu_type;
-    char *part_name;
-    uint64_t envm_size;
-    uint64_t esram_size;
-
-    uint32_t m3clk;
-    uint8_t apb0div;
-    uint8_t apb1div;
-
-    MSF2SysregState sysreg;
-    MSSTimerState timer;
-    MSSSpiState spi[MSF2_NUM_SPIS];
-} MSF2State;
-
-#endif
+    qemu_irq out_irq;
+    bool levels[MAX_OR_LINES];
+    uint16_t num_lines;
+};
