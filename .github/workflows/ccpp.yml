@@ -37,5 +37,5 @@ jobs:
       run: |        
         mkdir qemu_esp32
         cd qemu_esp32
-        $GITHUB_WORKSPACE/configure --disable-capstone --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
+        $GITHUB_WORKSPACE/configure --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
         make -j 2
