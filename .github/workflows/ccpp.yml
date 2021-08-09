@@ -21,3 +21,23 @@ jobs:
       with:
         name: qemu-system-xtensa
         path: ./qemu_esp32/xtensa-softmmu/qemu-system-xtensa
+
+  build-mac:
+
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Brew install
+      run: |
+        brew install pixman
+        brew install glib
+        brew install automake
+        brew install pkg-config
+    - name: configure
+        cd ..
+        mkdir qemu_esp32
+        cd qemu_esp32
+        ../qemu-xtensa-esp32/configure --disable-capstone --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
+      run: make compiler
+    - name: make
+      run: make -j 2
