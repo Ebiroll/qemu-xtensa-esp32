@@ -34,10 +34,10 @@ jobs:
         brew install automake
         brew install pkg-config
     - name: configure
-        cd ..
+      run: |        
         mkdir qemu_esp32
         cd qemu_esp32
-        ../qemu-xtensa-esp32/configure --disable-capstone --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
+        $GITHUB_WORKSPACE/configure --disable-capstone --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
       run: make compiler
     - name: make
       run: make -j 2

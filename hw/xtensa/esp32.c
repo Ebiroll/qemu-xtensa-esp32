@@ -106,6 +106,10 @@ qemu_irq uart1_irq;
 void *connection_handler(void *connect);
 void *gdb_socket_thread(void *dummy);
 
+extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
+
+extern void esp32_i2c_interruptSet(qemu_irq new_irq);
+
 
 //#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
 #define DEBUG_LOG(...) {}
@@ -2830,9 +2834,6 @@ rom_i2c_reg block 0x67 reg 0x6 57
     return 0x0;
 }
 
-extern void esp32_i2c_fifo_dataSet(int offset,unsigned int data);
-
-extern void esp32_i2c_interruptSet(qemu_irq new_irq);
 
 
 static void esp_wifi_write(void *opaque, hwaddr addr,
