@@ -34,6 +34,12 @@
 #include <unistd.h>
 #endif
 
+#ifndef stat64
+#define stat64 stat
+#endif
+#ifndef fstat64
+#define fstat64 fstat
+#endif
 
 /// do nothing, must use open()
 MemoryMapped::MemoryMapped()
@@ -353,7 +359,9 @@ extern "C" const unsigned char* get_flashMemory()
   // Posix only
   #ifdef _MSC_VER  
   #else
-  ftruncate(fileno(file), X);
+  if (ftruncate(fileno(file), X)!=0) {
+    fprintf(stderr,"esp32flash.bin unable to truncate\n");
+  }
   #endif
   //fseek(fp, X , SEEK_SET);
   fclose(file);
@@ -362,10 +370,10 @@ extern "C" const unsigned char* get_flashMemory()
 
   if (memfile!=NULL) {
    //fprintf(stderr,"MAPPED esp32flash.bin");
-   unsigned int *data=(unsigned int *)memfile->getData();
-   fprintf(stderr, "esp32flash.bin @ %08X\n", data);
+   // unsigned int *data=(unsigned int *)memfile->getData();
+   // fprintf(stderr, "esp32flash.bin mapped @ %08X\n", data);
 
-   /*
+   /* Debug
    for(int j=0;j<1024;j++) 
    {
       printf( "%08X", *data);
@@ -378,5 +386,6 @@ extern "C" const unsigned char* get_flashMemory()
    return (memfile->getData());
   }
 
+  return(NULL);
 }
 
