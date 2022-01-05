@@ -1719,6 +1719,14 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 
     Esp32 *esp32=(Esp32 *) opaque;
 
+    if (addr>0x73000 && addr<0x73fff) {
+        printf("PHY READ WIFI\n");
+        printf ( "(addr) %" PRIx64"\n" ,addr); 
+        //printf ( "(addr) %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+    }
+
+
+    
     if (addr==0x71204) {
         printf("BT \n");
         return(0x8000900);
@@ -2052,6 +2060,11 @@ MemoryRegion *system_memory = get_system_memory();
 //static unsigned int rf_calib_data[0x200]={0};
 //static unsigned int rf_calib_index;
 
+    if (addr>0x73000 && addr<0x73fff) {
+        printf("PHY WRITE WIFI\n");
+        printf ( "(addr) %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+    }
+ 
     if (addr==0xe0c4) {
         fprintf(stderr,"(qemu set) calibration data \n");
         rf_calib_index=val & 0xff;
@@ -2261,7 +2274,9 @@ if (addr>=0x12000 && addr<0x13ffc) {
     )  {
         // Less info
     } else {
-       if (addr!=0x40000) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+        if (addr!=0x40000) {
+            if (addr!=0xdc) printf("io write %" PRIx64 ",%" PRIx64 " \n",addr,val);
+        }
     }
     switch (addr) {
           case 0x24:
@@ -2562,6 +2577,29 @@ if (addr>=0x12000 && addr<0x13ffc) {
           }
           //printf("\n");
     }
+
+}
+
+typedef struct Esp32PhyState {
+    int phy_state;
+} Esp32PhyState;
+
+static uint64_t esp_phy_read(void *opaque, hwaddr addr,
+        unsigned size)
+{
+
+    Esp32PhyState *s=opaque;
+
+    printf("PHY read 0x%" PRIx64 " \n",addr);
+
+}
+
+static void esp_phy_write(void *opaque, hwaddr addr,
+        uint64_t val, unsigned size)
+{
+    Esp32PhyState *s=opaque;
+
+    printf("PHY write 0x%" PRIx64 " \n",addr);
 
 }
 
@@ -2922,6 +2960,14 @@ static const MemoryRegionOps esp_wifi_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+static const MemoryRegionOps esp_phy_ops = {
+    .read = esp_phy_read,
+    .write = esp_phy_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+
+
+
 
 static uint64_t esp_iomux_read(void *opaque, hwaddr addr,
         unsigned size)
@@ -3048,6 +3094,8 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
     MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem; // *gpio,
     static MemoryRegion *wifi_io;
+
+    static MemoryRegion *phy_io;
 
     static MemoryRegion *sha_io;
 
@@ -3258,6 +3306,18 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
 
    memory_region_add_subregion(system_memory, 0x60000000, wifi_io);
    
+///////////////
+
+   Esp32PhyState *ph = g_malloc(sizeof(Esp32PhyState));
+
+   phy_io = g_malloc(sizeof(*phy_io));
+   memory_region_init_io(phy_io, NULL, &esp_phy_ops, ph, "esp32.phy",
+                              0x0f000);
+
+   memory_region_add_subregion(system_memory, 0x3ff73000, phy_io);
+
+
+
 
     esp32_fpga_init(system_io, 0x0d020000);
 
@@ -3417,7 +3477,7 @@ spi = esp32_spi_init(0,system_io, 0x42000, "esp32.spi1",
         i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
         if (true) {
             i2c_create_slave(i2c, "ssd1306", 0x3c);
-            //i2c_create_slave(i2c, "ssd1306", 0x02);
+            i2c_create_slave(i2c, "ssd1306", 0x02);
             //i2c_create_slave(i2c, "tmpbme280", 0x77);
         }
 
