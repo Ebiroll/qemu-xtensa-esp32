@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <cstdio>
 #include <stdlib.h>
+#include <stddef.h>
 
 // OS-specific
 #ifdef __MINGW32__
