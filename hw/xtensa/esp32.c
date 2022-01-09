@@ -2619,7 +2619,35 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 
     Esp32WifiState *s=opaque;
 
+    if (addr>0x33000 && addr<0x33fff) {
+        printf("PHY READ WIFI\n");
+        printf ( "(addr) %" PRIx64"\n" ,addr); 
+        //printf ( "(addr) %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+    }
+
+
+
+
     printf("wifi read 0x%" PRIx64 " \n",addr);
+
+        if (addr==0x33cb8) {
+             printf("WIFI TXQ\n");
+        }
+
+
+        if (addr==0x33d20) {
+             printf("0x60033d20 TX REG\n");
+        }
+
+        if (addr==0x33088) {
+             printf("0x60033088 RX REG\n");
+        }
+
+        if (addr==0x33c48) {
+             printf("0x60033c48 EVENT REG\n");
+        }
+
+
 
         if (addr==0x33c48) {
              printf("BB_WDT_STATUS\n");
@@ -2899,6 +2927,20 @@ static void esp_wifi_write(void *opaque, hwaddr addr,
 
         printf("BB_BUFF_1 0x60005038 ,%" PRIx64 " \n",val);
     }
+
+
+    if (addr==0x33d20) {
+            printf("0x60033d20 TX REG\n");
+    }
+
+    if (addr==0x33088) {
+            printf("0x60033088 RX REG\n");
+    }
+
+    if (addr==0x33c48) {
+            printf("0x60033c48 WDEV_LMAC_IRQ_STATUS EVENT REG\n");
+    }
+
 
 
     pthread_mutex_lock(&mutex);
