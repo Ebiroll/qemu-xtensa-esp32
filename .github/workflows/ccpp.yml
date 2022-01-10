@@ -39,5 +39,5 @@ jobs:
         mkdir qemu_esp32
         cd qemu_esp32
         $GITHUB_WORKSPACE/configure --disable-werror --disable-sdl --disable-gtk  --prefix=`pwd`/root --target-list=xtensa-softmmu
-        mv version py_version
+        mv $GITHUB_WORKSPACE/version $GITHUB_WORKSPACE/py_version
         make -j 2
