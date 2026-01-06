@@ -2045,7 +2045,18 @@ static uint64_t esp_io_read(void *opaque, hwaddr addr,
 }
 
 
+/* Exchange Memory Map (Data Plane) */
+#define BTDM_EXCH_MEM_BASE     0x3FFB0000
+#define BTDM_EXCH_TABLE        ((void*)0x3FFB0000)
+#define BTDM_FREQ_TABLE        ((void*)0x3FFB0040)
+#define BTDM_BLE_CRYPT         ((void*)0x3FFB0098)
+#define BTDM_BLE_CTRL_STRUCT   ((void*)0x3FFB00B8)
+#define BTDM_BLE_WHITELIST     ((void*)0x3FFB0480)
+#define BTDM_BLE_RAL           ((void*)0x3FFB0510)
+#define BTDM_BLE_TX_DESC       ((void*)0x3FFB05AC)
+#define BTDM_BLE_RX_DESC       ((void*)0x3FFB0934)
 
+#define BTDM_BASE_ADDR 0x3FF71000
 
 
 static void esp_io_write(void *opaque, hwaddr addr,
@@ -2063,6 +2074,19 @@ MemoryRegion *system_memory = get_system_memory();
     if (addr>0x73000 && addr<0x73fff) {
         printf("PHY WRITE WIFI\n");
         printf ( "(addr) %" PRIx64 "  %" PRIx64 "\n" ,addr,val); 
+    }
+
+    if (BTDM_EXCH_TABLE <= (void*)addr && (void*)addr < BTDM_BLE_RX_DESC + 0x400) {
+        printf("BTDM_BLE_MEM WRITE %d , %d \n", (int)addr, (int)val);
+        //memcpy((void*)addr, &val, size);
+        // memory_region_write(system_memory, addr, val, size);
+        return;
+    }
+
+    if (BTDM_BASE_ADDR <= (void*)addr && (void*)addr < BTDM_BASE_ADDR + 0x1000) {
+        printf("BTDM REG WRITE %d , %d \n", (int)addr, (int)val);
+        //memory_region_write(system_memory, addr, val, size);
+        return;
     }
  
     if (addr==0xe0c4) {
@@ -2627,8 +2651,7 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
 
 
 
-
-    printf("wifi read 0x%" PRIx64 " \n",addr);
+    if (addr!=0x1c) printf("wifi read 0x%" PRIx64 " \n",addr);
 
         if (addr==0x33cb8) {
              printf("WIFI TXQ\n");
@@ -3134,7 +3157,7 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
     MemoryRegion *rom1_cpu0,*rom1_cpu1;
 
 
-    MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem; // *gpio,
+    MemoryRegion *ram,*ram1, *rom, *system_io, *ulp_slowmem, *rtcram; // *gpio,
     static MemoryRegion *wifi_io;
 
     static MemoryRegion *phy_io;
@@ -3285,6 +3308,15 @@ static void esp32_init(const ESP32BoardDesc *board, MachineState *machine)
                           0x80000);
 
     memory_region_add_subregion(system_memory, 0x50000000, ulp_slowmem);
+
+
+    // RTC RAM at 0x3FF80000, 8 KiB
+    rtcram = g_malloc(sizeof(*rtcram));
+    memory_region_init_ram(rtcram, NULL, "esp32.rtcram", 0x2000,
+                           &error_abort);
+    vmstate_register_ram_global(rtcram);
+    // Use overlap with priority 1 to take precedence over the larger iram0 region
+    memory_region_add_subregion_overlap(system_memory, 0x3FF80000, rtcram, 1);
 
 
     // Cant really see this in documentation, maybe leftover from ESP31

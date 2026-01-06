@@ -816,7 +816,7 @@ static uint64_t esp_wifi_read(void *opaque, hwaddr addr,
         unsigned size)
 {
 
-    printf("wifi read %" PRIx64 " \n",addr);
+    if (addr!=0x1c) printf("wifi read %" PRIx64 " \n",addr);
     switch(addr) {
     case 0xe04c:
         return 0xffffffff;
