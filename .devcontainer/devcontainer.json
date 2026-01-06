@@ -1,0 +1,13 @@
+{
+  "name": "qemu-xtensa-esp32-dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/qemu-xtensa-esp32",
+  "settings": {
+    "terminal.integrated.shell.linux": "/bin/bash"
+  },
+  "postCreateCommand": "echo 'Dev container ready!'",
+  "remoteUser": "vscode"
+}
